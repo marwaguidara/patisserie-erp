@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pâtisserie Platform - Sprint 2 • Ventes & Caisse</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="logo-icon">🥐</div>
+        <div>
+          <h1>Pâtisserie Platform</h1>
+          <span class="subtitle">Sprint 2 • Ventes, Caisse et Reporting</span>
+        </div>
+      </div>
+      <div class="header-status">
+        <div id="alerts-summary-badge" class="alerts-summary hidden">
+          <span class="alert-pill low-stock" id="badge-low-stock">0 Stock Faible</span>
+          <span class="alert-pill expiring" id="badge-expiring">0 Péremption</span>
+        </div>
+        <div class="status-indicator">
+          <span class="dot active"></span>
+          <span id="api-status">API Connectée</span>
+        </div>
+        <div class="user-profile" id="user-profile">
+          <button class="btn btn-secondary" id="login-modal-btn">Se Connecter</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="catalog">📦 Catalogue Produits</button>
+      <button class="tab-btn" data-tab="ingredients">🌾 Stocks & Ingrédients</button>
+      <button class="tab-btn" data-tab="production">⚡ Atelier de Fabrication</button>
+      <button class="tab-btn" data-tab="sales">🛒 Ventes</button>
+      <button class="tab-btn" data-tab="employees">👥 Employés</button>
+      <button class="tab-btn" data-tab="suppliers">🚚 Fournisseurs</button>
+      <button class="tab-btn" data-tab="categories">🏷️ Catégories</button>
+      <button class="tab-btn" data-tab="purchase-orders">🚚 Commandes Fournisseurs</button>
+      <button class="tab-btn" data-tab="customer-orders">🎂 Commandes Clients</button>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <div id="toast" class="toast hidden"></div>
+
+      <!-- Tab 1: Product Catalog -->
+      <section id="tab-catalog" class="tab-content active">
+        <div class="section-header">
+          <div>
+            <h2>Catalogue Produits & Fiches Techniques</h2>
+            <p class="section-desc">Gérez vos produits finis et leurs recettes de fabrication.</p>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-primary" id="open-create-product-btn">➕ Nouveau Produit</button>
+            <button class="btn btn-secondary" id="refresh-products">🔄 Actualiser</button>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <input type="text" id="search-products" class="form-control filter-input" placeholder="🔍 Rechercher un produit...">
+          <select id="filter-product-category" class="form-control filter-select">
+            <option value="">Toutes les catégories</option>
+          </select>
+        </div>
+
+        <div class="grid grid-3" id="products-grid">
+          <!-- Dynamically populated -->
+        </div>
+      </section>
+
+      <!-- Tab 2: Stock Dashboard -->
+      <section id="tab-ingredients" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2>Tableau de Bord des Stocks</h2>
+            <p class="section-desc">Suivi des matières premières, entrées/sorties et alertes de péremption.</p>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-accent" id="open-movement-btn">📦 Mouvement de Stock</button>
+            <button class="btn btn-primary" id="open-create-ingredient-btn">➕ Ingrédient</button>
+            <button class="btn btn-secondary" id="refresh-ingredients">🔄 Actualiser</button>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <input type="text" id="search-ingredients" class="form-control filter-input" placeholder="🔍 Rechercher un ingrédient...">
+          <select id="filter-stock-status" class="form-control filter-select">
+            <option value="">Tous les statuts</option>
+            <option value="low_stock">⚠️ Stock Faible</option>
+            <option value="expiring_soon">⏳ Péremption Proche (≤ 7j)</option>
+          </select>
+        </div>
+
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Ingrédient</th>
+                <th>Stock Actuel</th>
+                <th>Seuil Min</th>
+                <th>Coût / Unité</th>
+                <th>Date Péremption</th>
+                <th>Fournisseur</th>
+                <th>Statut</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ingredients-tbody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Tab 3: Production Workshop -->
+      <section id="tab-production" class="tab-content">
+        <div class="section-header">
+          <h2>Atelier de Fabrication & Déduction Atomique</h2>
+          <p>Chaque lot fabriqué déduit immédiatement les ingrédients selon la fiche technique.</p>
+        </div>
+        <div class="grid grid-2">
+          <div class="card production-card">
+            <h3>Formulaire de Lancement</h3>
+            <form id="production-form">
+              <div class="form-group">
+                <label for="prod-product-select">Produit à fabriquer</label>
+                <select id="prod-product-select" class="form-control" required></select>
+              </div>
+              <div class="form-group">
+                <label for="prod-quantity">Quantité du lot (unités)</label>
+                <input type="number" id="prod-quantity" class="form-control" value="10" min="1" required>
+              </div>
+              <button type="submit" class="btn btn-accent btn-large">⚡ Fabriquer et Déduire le Stock</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <h3>Aperçu des Besoins en Ingrédients</h3>
+            <div id="recipe-preview-box" class="recipe-preview">
+              <p class="text-muted">Sélectionnez un produit pour voir la recette.</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="production-result" class="production-result hidden margin-top-20"></div>
+      </section>
+
+      <!-- Tab 4: Sales & POS -->
+      <section id="tab-sales" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2>🛒 Ventes & Caisse</h2>
+            <p class="section-desc">Pilotez les transactions, suivez les KPI et affichez les tickets de caisse en temps réel.</p>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-accent" id="open-new-sale-item-btn">➕ Ajouter une ligne</button>
+            <button class="btn btn-secondary" id="refresh-sales">🔄 Actualiser</button>
+          </div>
+        </div>
+
+        <div class="card margin-bottom-20">
+          <div class="section-header">
+            <div>
+              <h3>📈 Prévision IA - Produit</h3>
+              <p class="section-desc">Prévision calculée par le service IA réel avec confiance et statut explicites.</p>
+            </div>
+          </div>
+          <div class="filter-bar">
+            <select id="forecast-product-select" class="form-control filter-select"></select>
+            <button class="btn btn-primary" id="refresh-forecast-btn">Actualiser la prévision</button>
+          </div>
+          <div id="forecast-panel" class="card" style="background:#0b1220; border:1px solid #1e293b; color:white; padding:18px; border-radius:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+              <div>
+                <div style="font-size:12px; letter-spacing:.08em; text-transform:uppercase; opacity:.7;">Valeur prévue</div>
+                <div id="forecast-value" style="font-size:2rem; font-weight:700;">--</div>
+              </div>
+              <div>
+                <div style="font-size:12px; letter-spacing:.08em; text-transform:uppercase; opacity:.7;">Confiance</div>
+                <div id="forecast-confidence" style="font-size:1.1rem; font-weight:600;">--</div>
+              </div>
+              <div>
+                <div style="font-size:12px; letter-spacing:.08em; text-transform:uppercase; opacity:.7;">Statut</div>
+                <div id="forecast-status" style="font-size:1.1rem; font-weight:600;">--</div>
+              </div>
+            </div>
+            <div id="forecast-interval" style="margin-top:12px; opacity:.8;">Intervalle: --</div>
+          </div>
+        </div>
+
+        <div class="metric-grid" id="sales-metrics-grid">
+          <!-- KPI cards populated dynamically -->
+        </div>
+
+        <div class="grid grid-2">
+          <div class="card sales-order-panel">
+            <h3>Point de Vente Rapide</h3>
+            <p class="section-desc">Sélectionnez les produits, capturez le paiement et enregistrez la transaction.</p>
+
+            <form id="sales-form">
+              <div id="sales-items-container" class="order-items"></div>
+              <div class="order-action-row">
+                <button type="button" class="btn btn-secondary" id="add-sale-item-btn">➕ Ajouter un produit</button>
+              </div>
+
+              <div class="form-group">
+                <label>Méthode de paiement</label>
+                <select id="sale-payment-method" class="form-control">
+                  <option value="CASH">Espèces</option>
+                  <option value="CARD">Carte</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Nom du client</label>
+                <input type="text" id="sale-customer-name" class="form-control" placeholder="Jean Dupont">
+              </div>
+              <div class="form-group">
+                <label>Téléphone du client</label>
+                <input type="text" id="sale-customer-phone" class="form-control" placeholder="0123456789">
+              </div>
+
+              <div class="order-summary card">
+                <div class="order-summary-row">
+                  <span>Lignes</span>
+                  <strong id="sale-items-count">0</strong>
+                </div>
+                <div class="order-summary-row">
+                  <span>Total</span>
+                  <strong id="sale-total-amount">0.00 €</strong>
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-accent btn-large">💳 Enregistrer la vente</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="section-header" style="margin-bottom: 16px;">
+              <div>
+                <h3>Historique des ventes</h3>
+                <p class="section-desc">Filtrez par période, produit et période personnalisée.</p>
+              </div>
+            </div>
+
+            <div class="filter-bar sales-filter-bar">
+              <select id="sales-filter-period" class="form-control filter-select">
+                <option value="">Période</option>
+                <option value="day">Aujourd'hui</option>
+                <option value="week">Cette semaine</option>
+                <option value="month">Ce mois</option>
+              </select>
+              <select id="sales-filter-product" class="form-control filter-select">
+                <option value="">Tous les produits</option>
+              </select>
+            </div>
+            <div class="filter-bar sales-filter-bar">
+              <input type="date" id="sales-filter-start" class="form-control filter-input">
+              <input type="date" id="sales-filter-end" class="form-control filter-input">
+            </div>
+
+            <div class="table-container sales-history-table">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Date</th>
+                    <th>Client</th>
+                    <th>Montant</th>
+                    <th>Articles</th>
+                    <th>Paiement</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="sales-history-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab 5: Employees -->
+      <section id="tab-employees" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2>Gestion des Employés</h2>
+            <p class="section-desc">Créez et gérez les profils employés, plannings et demandes de congés.</p>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-primary" id="open-create-employee-btn">➕ Nouvel Employé</button>
+            <button class="btn btn-secondary" id="refresh-employees">🔄 Actualiser</button>
+            <button class="btn btn-accent" id="open-create-schedule-btn">📅 Ajouter Planning</button>
+            <button class="btn btn-secondary" id="open-create-leave-btn">🛌 Ajouter Congé</button>
+          </div>
+        </div>
+
+        <div class="table-container" id="employee-directory-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nom</th>
+                <th>Email</th>
+                <th>Rôle</th>
+                <th>Poste</th>
+                <th>Téléphone</th>
+                <th>Recrutement</th>
+                <th>Adresse</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="employees-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="section-header margin-top-20">
+          <div>
+            <h2>📅 Plannings</h2>
+            <p class="section-desc">Vue des shifts planifiés par employé.</p>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-secondary" id="refresh-schedules">🔄 Actualiser</button>
+          </div>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Employé</th>
+                <th>Début</th>
+                <th>Fin</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="schedules-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="section-header margin-top-20">
+          <div>
+            <h2>🛌 Demandes de Congés</h2>
+            <p class="section-desc">Suivi des congés avec statut et actions d'approbation (ADMIN).</p>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-secondary" id="refresh-leaves">🔄 Actualiser</button>
+          </div>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Employé</th>
+                <th>Début</th>
+                <th>Fin</th>
+                <th>Motif</th>
+                <th>Statut</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="leaves-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Tab 6: Suppliers -->
+      <section id="tab-suppliers" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2>Gestion des Fournisseurs</h2>
+            <p class="section-desc">Suivez vos fournisseurs, commandes et performances de livraison.</p>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-primary" id="open-create-supplier-btn">➕ Nouveau Fournisseur</button>
+            <button class="btn btn-secondary" id="refresh-suppliers">🔄 Actualiser</button>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nom</th>
+                <th>Contact</th>
+                <th>Email</th>
+                <th>Téléphone</th>
+                <th>Adresse</th>
+                <th>Qualité</th>
+                <th>Notation</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="suppliers-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Tab 7: Categories -->
+      <section id="tab-categories" class="tab-content">
+        <div class="section-header">
+          <h2>Gestion des Catégories</h2>
+          <button class="btn btn-primary" id="open-create-category-btn">➕ Nouvelle Catégorie</button>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nom</th>
+                <th>Description</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="categories-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Tab 8: Purchase Orders -->
+      <section id="tab-purchase-orders" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2>Commandes Fournisseurs (Réapprovisionnement)</h2>
+            <p class="section-desc">Gérez les réapprovisionnements en matières premières et suivez la réception des stocks.</p>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-primary" id="open-create-po-btn">➕ Nouvelle Commande Fournisseur</button>
+            <button class="btn btn-secondary" id="refresh-purchase-orders">🔄 Actualiser</button>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <select id="filter-po-status" class="form-control filter-select">
+            <option value="">Tous les statuts</option>
+            <option value="DRAFT">DRAFT (Brouillon)</option>
+            <option value="ORDERED">ORDERED (Commandé)</option>
+            <option value="RECEIVED">RECEIVED (Réceptionné)</option>
+            <option value="CANCELLED">CANCELLED (Annulé)</option>
+          </select>
+          <select id="filter-po-supplier" class="form-control filter-select">
+            <option value="">Tous les fournisseurs</option>
+          </select>
+        </div>
+
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Fournisseur</th>
+                <th>Total (€)</th>
+                <th>Statut</th>
+                <th>Créé le</th>
+                <th>Réceptionné le</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="purchase-orders-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Tab 9: Customer Orders -->
+      <section id="tab-customer-orders" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2>Commandes Clients (Sur Commande & Pâtisseries Spéciales)</h2>
+            <p class="section-desc">Enregistrez et suivez l'état d'avancement des gâteaux et commandes personnalisées.</p>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-primary" id="open-create-co-btn">➕ Nouvelle Commande Client</button>
+            <button class="btn btn-secondary" id="refresh-customer-orders">🔄 Actualiser</button>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <select id="filter-co-status" class="form-control filter-select">
+            <option value="">Tous les statuts</option>
+            <option value="PENDING">PENDING (En attente)</option>
+            <option value="IN_PRODUCTION">IN_PRODUCTION (En fabrication)</option>
+            <option value="READY">READY (Prête)</option>
+            <option value="DELIVERED">DELIVERED (Livrée)</option>
+            <option value="CANCELLED">CANCELLED (Annulée)</option>
+          </select>
+          <input type="date" id="filter-co-delivery-date" class="form-control filter-input">
+        </div>
+
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Client</th>
+                <th>Téléphone</th>
+                <th>Livraison Prévue</th>
+                <th>Total (€)</th>
+                <th>Instructions</th>
+                <th>Statut</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="customer-orders-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal: Create / Edit Product -->
+  <div class="modal-overlay hidden" id="product-modal">
+    <div class="modal">
+      <h2 id="product-modal-title">Nouveau Produit</h2>
+      <form id="product-form">
+        <input type="hidden" id="product-id">
+        <div class="form-group">
+          <label>Nom du produit</label>
+          <input type="text" id="product-name" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <input type="text" id="product-description" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>Prix de vente (€)</label>
+          <input type="number" step="0.01" id="product-price" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Catégorie</label>
+          <select id="product-category-select" class="form-control"></select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('product-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Create / Edit Category -->
+  <div class="modal-overlay hidden" id="category-modal">
+    <div class="modal">
+      <h2 id="category-modal-title">Nouvelle Catégorie</h2>
+      <form id="category-form">
+        <input type="hidden" id="category-id">
+        <div class="form-group">
+          <label>Nom de la catégorie</label>
+          <input type="text" id="category-name" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <input type="text" id="category-description" class="form-control">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('category-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Recipe Management -->
+  <div class="modal-overlay hidden" id="recipe-modal">
+    <div class="modal modal-large">
+      <h2>Fiche Technique / Recette: <span id="recipe-product-title"></span></h2>
+      <form id="recipe-form">
+        <input type="hidden" id="recipe-product-id">
+        <div id="recipe-items-container"></div>
+        <button type="button" class="btn btn-secondary btn-sm margin-top-10" id="add-recipe-row-btn">➕ Ajouter un ingrédient</button>
+
+        <div class="modal-actions margin-top-20">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('recipe-modal')">Fermer</button>
+          <button type="submit" class="btn btn-primary">Sauvegarder la Recette</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Create / Edit Ingredient -->
+  <div class="modal-overlay hidden" id="ingredient-modal">
+    <div class="modal">
+      <h2 id="ingredient-modal-title">Nouvel Ingrédient</h2>
+      <form id="ingredient-form">
+        <input type="hidden" id="ingredient-id">
+        <div class="form-group">
+          <label>Nom de l'ingrédient</label>
+          <input type="text" id="ingredient-name" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Unité de mesure (ex: kg, g, l, unité)</label>
+          <input type="text" id="ingredient-unit" class="form-control" required placeholder="kg">
+        </div>
+        <div class="form-group">
+          <label>Seuil de stock minimum (alerte)</label>
+          <input type="number" step="0.001" id="ingredient-min-stock" class="form-control" value="5.0" required>
+        </div>
+        <div class="form-group">
+          <label>Coût unitaire (€)</label>
+          <input type="number" step="0.01" id="ingredient-cost" class="form-control" value="0.00">
+        </div>
+        <div class="form-group">
+          <label>Date de péremption</label>
+          <input type="date" id="ingredient-expiration" class="form-control">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('ingredient-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Stock Movement -->
+  <div class="modal-overlay hidden" id="movement-modal">
+    <div class="modal">
+      <h2>Enregistrer un Mouvement de Stock</h2>
+      <form id="movement-form">
+        <div class="form-group">
+          <label>Ingrédient</label>
+          <select id="movement-ingredient-select" class="form-control" required></select>
+        </div>
+        <div class="form-group">
+          <label>Type de mouvement</label>
+          <select id="movement-type-select" class="form-control" required>
+            <option value="IN">➕ Entrée de Stock (Achat / Réception)</option>
+            <option value="OUT">➖ Sortie Manuelle</option>
+            <option value="WASTE">🗑️ Perte / Gâchis</option>
+            <option value="ADJUSTMENT">🔧 Ajustement d'Inventaire</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Quantité</label>
+          <input type="number" step="0.001" id="movement-quantity" class="form-control" required min="0.001">
+        </div>
+        <div class="form-group">
+          <label>Motif / Remarque</label>
+          <input type="text" id="movement-reason" class="form-control" placeholder="Réception commande supplier #1">
+        </div>
+        <div class="form-group">
+          <label>Date de péremption du lot</label>
+          <input type="date" id="movement-expiration" class="form-control">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('movement-modal')">Annuler</button>
+          <button type="submit" class="btn btn-accent">Enregistrer Mouvement</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Employee Management -->
+  <div class="modal-overlay hidden" id="employee-modal">
+    <div class="modal modal-large">
+      <h2 id="employee-modal-title">Nouvel Employé</h2>
+      <form id="employee-form">
+        <input type="hidden" id="employee-id">
+        <div class="form-group">
+          <label>Prénom</label>
+          <input type="text" id="employee-first-name" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Nom</label>
+          <input type="text" id="employee-last-name" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Email (compte de connexion)</label>
+          <input type="email" id="employee-email" class="form-control" placeholder="employe@bakery.com" required>
+        </div>
+        <div class="form-group">
+          <label>Mot de passe</label>
+          <input type="password" id="employee-password" class="form-control" placeholder="Laisser vide pour conserver" minlength="6">
+          <small class="text-muted" style="font-size: 0.8rem;">Requis à la création. Laisser vide lors d'une modification.</small>
+        </div>
+        <div class="form-group">
+          <label>Rôle</label>
+          <select id="employee-role" class="form-control" required>
+            <option value="EMPLOYEE">Employé (EMPLOYEE)</option>
+            <option value="PRODUCTION">Production (PRODUCTION)</option>
+            <option value="CASHIER">Caisse (CASHIER)</option>
+            <option value="STOCK">Stock (STOCK)</option>
+            <option value="ADMIN">Administrateur (ADMIN)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Poste</label>
+          <input type="text" id="employee-job-title" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>Téléphone</label>
+          <input type="text" id="employee-phone" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>Date d'embauche</label>
+          <input type="date" id="employee-hire-date" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>Adresse</label>
+          <input type="text" id="employee-address" class="form-control">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('employee-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Schedule Entry -->
+  <div class="modal-overlay hidden" id="schedule-modal">
+    <div class="modal">
+      <h2>Ajouter un Planning</h2>
+      <form id="schedule-form">
+        <div class="form-group">
+          <label>Employé</label>
+          <select id="schedule-employee-select" class="form-control" required></select>
+        </div>
+        <div class="form-group">
+          <label>Début du shift</label>
+          <input type="datetime-local" id="schedule-start" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Fin du shift</label>
+          <input type="datetime-local" id="schedule-end" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <input type="text" id="schedule-notes" class="form-control">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('schedule-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Leave Request -->
+  <div class="modal-overlay hidden" id="leave-modal">
+    <div class="modal">
+      <h2>Ajouter un Congé</h2>
+      <form id="leave-form">
+        <div class="form-group" id="leave-employee-field">
+          <label>Employé</label>
+          <select id="leave-employee-select" class="form-control" required></select>
+        </div>
+        <div class="form-group">
+          <label>Date de début</label>
+          <input type="date" id="leave-start" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Date de fin</label>
+          <input type="date" id="leave-end" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Motif</label>
+          <input type="text" id="leave-reason" class="form-control">
+        </div>
+        <div class="form-group" id="leave-status-field">
+          <label>Statut</label>
+          <select id="leave-status" class="form-control">
+            <option value="PENDING">PENDING</option>
+            <option value="APPROVED">APPROVED</option>
+            <option value="REJECTED">REJECTED</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('leave-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Supplier Management -->
+  <div class="modal-overlay hidden" id="supplier-modal">
+    <div class="modal modal-large">
+      <h2 id="supplier-modal-title">Nouveau Fournisseur</h2>
+      <form id="supplier-form">
+        <input type="hidden" id="supplier-id">
+        <div class="form-group">
+          <label>Nom du fournisseur</label>
+          <input type="text" id="supplier-name" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Contact</label>
+          <input type="text" id="supplier-contact" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="supplier-email" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>Téléphone</label>
+          <input type="text" id="supplier-phone" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>Adresse</label>
+          <input type="text" id="supplier-address" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>Délai de livraison (jours)</label>
+          <input type="number" id="supplier-lead-time" class="form-control" min="0">
+        </div>
+        <div class="form-group">
+          <label>Qualité</label>
+          <input type="text" id="supplier-quality" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>Note</label>
+          <input type="number" step="0.1" min="0" max="5" id="supplier-rating" class="form-control">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('supplier-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Create / Edit Purchase Order -->
+  <div class="modal-overlay hidden" id="po-modal">
+    <div class="modal modal-large">
+      <h2 id="po-modal-title">Nouvelle Commande Fournisseur</h2>
+      <form id="po-form">
+        <input type="hidden" id="po-id">
+        <div class="form-group">
+          <label>Fournisseur</label>
+          <select id="po-supplier-select" class="form-control" required></select>
+        </div>
+        <div class="form-group">
+          <label>Ingrédients à commander</label>
+          <div id="po-items-container"></div>
+          <button type="button" class="btn btn-secondary btn-sm margin-top-10" id="add-po-item-btn">➕ Ajouter un ingrédient</button>
+        </div>
+        <div class="order-summary card margin-top-10">
+          <div class="order-summary-row">
+            <span>Total Coût Estimé</span>
+            <strong id="po-total-cost-display">0.00 €</strong>
+          </div>
+        </div>
+        <div class="modal-actions margin-top-20">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('po-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer (DRAFT)</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Purchase Order Details & Workflow -->
+  <div class="modal-overlay hidden" id="po-detail-modal">
+    <div class="modal modal-large">
+      <h2>Commande Fournisseur #<span id="po-detail-id"></span></h2>
+      <div id="po-detail-body"></div>
+      <div class="modal-actions margin-top-20" id="po-detail-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('po-detail-modal')">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Create / Edit Customer Order -->
+  <div class="modal-overlay hidden" id="co-modal">
+    <div class="modal modal-large">
+      <h2 id="co-modal-title">Nouvelle Commande Client</h2>
+      <form id="co-form">
+        <input type="hidden" id="co-id">
+        <div class="form-group">
+          <label>Nom du Client</label>
+          <input type="text" id="co-customer-name" class="form-control" required placeholder="Jean Dupont">
+        </div>
+        <div class="form-group">
+          <label>Téléphone</label>
+          <input type="text" id="co-customer-phone" class="form-control" placeholder="+33 6 12 34 56 78">
+        </div>
+        <div class="form-group">
+          <label>Date de Livraison Prévue</label>
+          <input type="date" id="co-delivery-date" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Instructions Spéciales / Personnalisation</label>
+          <input type="text" id="co-special-instructions" class="form-control" placeholder="Gâteau 3 étages au chocolat">
+        </div>
+        <div class="form-group">
+          <label>Produits commandés</label>
+          <div id="co-items-container"></div>
+          <button type="button" class="btn btn-secondary btn-sm margin-top-10" id="add-co-item-btn">➕ Ajouter un produit</button>
+        </div>
+        <div class="order-summary card margin-top-10">
+          <div class="order-summary-row">
+            <span>Total Commande</span>
+            <strong id="co-total-price-display">0.00 €</strong>
+          </div>
+        </div>
+        <div class="modal-actions margin-top-20">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('co-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer Commande</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Customer Order Details & Workflow -->
+  <div class="modal-overlay hidden" id="co-detail-modal">
+    <div class="modal modal-large">
+      <h2>Commande Client #<span id="co-detail-id"></span></h2>
+      <div id="co-detail-body"></div>
+      <div class="modal-actions margin-top-20" id="co-detail-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('co-detail-modal')">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Login -->
+  <div class="modal-overlay hidden" id="login-modal">
+    <div class="modal">
+      <h2>Connexion Utilisateur</h2>
+      <form id="login-form">
+        <div class="form-group">
+          <label>Compte Utilisateur</label>
+          <select id="login-email-select" class="form-control">
+            <option value="admin@bakery.com">Administrateur (admin@bakery.com)</option>
+            <option value="production@bakery.com">Chef Pâtissier (production@bakery.com)</option>
+            <option value="cashier@bakery.com">Vendeur Caissier (cashier@bakery.com)</option>
+            <option value="stock@bakery.com">Gestionnaire Stock (stock@bakery.com)</option>
+            <option value="employe@bakery.com">Employé (employe@bakery.com)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Mot de passe</label>
+          <input type="password" id="login-password" class="form-control" value="password123" required>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('login-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Se Connecter</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

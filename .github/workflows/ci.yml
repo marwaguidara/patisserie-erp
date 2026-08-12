@@ -1,0 +1,38 @@
+name: Bakery Platform Continuous Integration
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test-and-verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install Backend Dependencies
+        run: |
+          cd backend
+          npm ci
+
+      - name: Run Knex Migrations & Seed
+        run: |
+          cd backend
+          npx knex migrate:latest
+          npx knex seed:run
+
+      - name: Run E2E Integration Tests
+        run: |
+          cd backend
+          npm test

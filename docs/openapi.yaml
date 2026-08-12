@@ -1,0 +1,2840 @@
+openapi: 3.0.3
+info:
+  title: Bakery Platform API
+  version: 2.0.0
+  description: >
+    Central API specification for the bakery platform. This document was regenerated from the live backend
+    implementation and reflects the Sprint 5 state of the codebase. The server is mounted at /api and the
+    contract is intended to match the actual Express routes and role checks in the app.
+  license:
+    name: Internal
+servers:
+  - url: http://localhost:5000/api
+    description: Local development server
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Categories
+  - name: Products
+  - name: Ingredients
+  - name: Sales
+  - name: Employees
+  - name: Suppliers
+  - name: Purchase Orders
+  - name: Customer Orders
+  - name: Analytics
+  - name: AI Forecast
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  /forecast:
+    get:
+      tags: [AI Forecast]
+      summary: Naive baseline forecast for a product
+      parameters:
+        - name: product_id
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: horizon_days
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 7
+      responses:
+        '200':
+          description: Forecast payload with confidence and status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForecastResponse'
+        '501':
+          description: Endpoint reserved for future model versions
+
+  /production-recommendations:
+    get:
+      tags: [AI Forecast]
+      summary: Production recommendations placeholder
+      responses:
+        '501':
+          description: Not implemented yet
+
+  /anomalies:
+    get:
+      tags: [AI Forecast]
+      summary: Anomaly detection placeholder
+      responses:
+        '501':
+          description: Not implemented yet
+
+  /segmentation:
+    get:
+      tags: [AI Forecast]
+      summary: Customer or product segmentation placeholder
+      responses:
+        '501':
+          description: Not implemented yet
+
+  /insights:
+    get:
+      tags: [AI Forecast]
+      summary: AI insights placeholder
+      responses:
+        '501':
+          description: Not implemented yet
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Authenticated session returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/users:
+    get:
+      tags: [Auth]
+      summary: List all users (ADMIN only)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /categories:
+    get:
+      tags: [Categories]
+      summary: List categories
+      responses:
+        '200':
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+    post:
+      tags: [Categories]
+      summary: Create category (ADMIN, PRODUCTION)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Category created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /categories/{id}:
+    put:
+      tags: [Categories]
+      summary: Update category (ADMIN, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '200':
+          description: Category updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Categories]
+      summary: Delete category (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Category deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /products:
+    get:
+      tags: [Products]
+      summary: List products
+      parameters:
+        - $ref: '#/components/parameters/CategoryIdQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+      responses:
+        '200':
+          description: Product list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+    post:
+      tags: [Products]
+      summary: Create product (ADMIN, PRODUCTION)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, price]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                price:
+                  type: number
+                category_id:
+                  type: integer
+                  nullable: true
+                stock_quantity:
+                  type: integer
+                recipe:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/RecipeInput'
+      responses:
+        '201':
+          description: Product created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /products/{id}:
+    get:
+      tags: [Products]
+      summary: Get product detail
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Product detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Products]
+      summary: Update product (ADMIN, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                price:
+                  type: number
+                category_id:
+                  type: integer
+                  nullable: true
+                stock_quantity:
+                  type: integer
+                is_active:
+                  type: boolean
+      responses:
+        '200':
+          description: Product updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Products]
+      summary: Delete product (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Product deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /products/{id}/recipe:
+    get:
+      tags: [Products]
+      summary: Get product recipe
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Recipe items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RecipeItem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Products]
+      summary: Set or replace recipe (ADMIN, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/RecipeInput'
+      responses:
+        '200':
+          description: Recipe updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecipeUpdateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /products/{id}/produce:
+    post:
+      tags: [Products]
+      summary: Produce product batch (ADMIN, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity:
+                  type: integer
+                  minimum: 1
+      responses:
+        '200':
+          description: Production result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /ingredients:
+    get:
+      tags: [Ingredients]
+      summary: List ingredients
+      parameters:
+        - $ref: '#/components/parameters/SearchQuery'
+        - $ref: '#/components/parameters/IngredientStatusQuery'
+      responses:
+        '200':
+          description: Ingredient list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ingredient'
+    post:
+      tags: [Ingredients]
+      summary: Create ingredient (ADMIN, STOCK, PRODUCTION)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, unit]
+              properties:
+                name:
+                  type: string
+                unit:
+                  type: string
+                current_stock:
+                  type: number
+                minimum_stock:
+                  type: number
+                cost_per_unit:
+                  type: number
+                expiration_date:
+                  type: string
+                  format: date
+                supplier_id:
+                  type: integer
+                  nullable: true
+      responses:
+        '201':
+          description: Ingredient created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ingredient'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /ingredients/{id}:
+    get:
+      tags: [Ingredients]
+      summary: Get ingredient detail
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Ingredient detail with recent movements
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngredientDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Ingredients]
+      summary: Update ingredient (ADMIN, STOCK, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                unit:
+                  type: string
+                minimum_stock:
+                  type: number
+                cost_per_unit:
+                  type: number
+                expiration_date:
+                  type: string
+                  format: date
+                supplier_id:
+                  type: integer
+                  nullable: true
+      responses:
+        '200':
+          description: Ingredient updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ingredient'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Ingredients]
+      summary: Delete ingredient (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Ingredient deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /ingredients/{id}/movement:
+    post:
+      tags: [Ingredients]
+      summary: Apply stock movement (ADMIN, STOCK, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [movement_type, quantity]
+              properties:
+                movement_type:
+                  type: string
+                  enum: [IN, OUT, WASTE, ADJUSTMENT]
+                quantity:
+                  type: number
+                reason:
+                  type: string
+                expiration_date:
+                  type: string
+                  format: date
+                batch_number:
+                  type: string
+      responses:
+        '200':
+          description: Stock movement applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMovementResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /ingredients/alerts:
+    get:
+      tags: [Ingredients]
+      summary: Get stock and expiration alerts
+      responses:
+        '200':
+          description: Alert summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertSummary'
+
+  /stocks:
+    get:
+      tags: [Ingredients]
+      summary: Stock alias for ingredients listing
+      parameters:
+        - $ref: '#/components/parameters/SearchQuery'
+        - $ref: '#/components/parameters/IngredientStatusQuery'
+      responses:
+        '200':
+          description: Ingredient list in stock alias
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ingredient'
+
+  /stocks/alerts:
+    get:
+      tags: [Ingredients]
+      summary: Stock alias for low-stock and expiration alerts
+      responses:
+        '200':
+          description: Alert summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertSummary'
+
+  /stocks/{id}:
+    get:
+      tags: [Ingredients]
+      summary: Stock alias detail
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Ingredient detail with movements
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngredientDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /stocks/{id}/movement:
+    post:
+      tags: [Ingredients]
+      summary: Stock alias movement endpoint
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockMovementRequest'
+      responses:
+        '200':
+          description: Stock movement applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMovementResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /sales:
+    get:
+      tags: [Sales]
+      summary: List sales (ADMIN, CASHIER, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PeriodQuery'
+        - $ref: '#/components/parameters/ProductIdQuery'
+        - $ref: '#/components/parameters/StartDateQuery'
+        - $ref: '#/components/parameters/EndDateQuery'
+      responses:
+        '200':
+          description: Sales
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Sale'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Sales]
+      summary: Create sale (ADMIN, CASHIER, PRODUCTION)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleInput'
+      responses:
+        '201':
+          description: Sale created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /sales/history:
+    get:
+      tags: [Sales]
+      summary: Sales history
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PeriodQuery'
+        - $ref: '#/components/parameters/ProductIdQuery'
+        - $ref: '#/components/parameters/StartDateQuery'
+        - $ref: '#/components/parameters/EndDateQuery'
+      responses:
+        '200':
+          description: Sales history list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Sale'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /sales/metrics:
+    get:
+      tags: [Sales]
+      summary: Get sales metrics
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Sales KPIs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesMetrics'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /sales/{id}:
+    get:
+      tags: [Sales]
+      summary: Get sale by id
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Sale detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sale'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /sales/{id}/ticket/html:
+    get:
+      tags: [Sales]
+      summary: Get printable HTML sale ticket
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: HTML ticket content
+          content:
+            text/html:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /employees:
+    get:
+      tags: [Employees]
+      summary: List employee records
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Employee list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Employee'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Employees]
+      summary: Create employee or link an existing user account (ADMIN)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeInput'
+      responses:
+        '201':
+          description: Employee created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /employees/schedules:
+    get:
+      tags: [Employees]
+      summary: List schedules
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Schedule list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Schedule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Employees]
+      summary: Create schedule (ADMIN)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleInput'
+      responses:
+        '201':
+          description: Schedule created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /employees/leaves:
+    get:
+      tags: [Employees]
+      summary: List leave requests
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Leave list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Leave'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Employees]
+      summary: Create leave request
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeaveInput'
+      responses:
+        '201':
+          description: Leave created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Leave'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /employees/leaves/{id}/status:
+    put:
+      tags: [Employees]
+      summary: Update leave status (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [PENDING, APPROVED, REJECTED]
+      responses:
+        '200':
+          description: Leave updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Leave'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /employees/{id}:
+    get:
+      tags: [Employees]
+      summary: Get employee by id
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Employee detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Employees]
+      summary: Update employee (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: integer
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                phone:
+                  type: string
+                job_title:
+                  type: string
+                hire_date:
+                  type: string
+                  format: date
+                address:
+                  type: string
+      responses:
+        '200':
+          description: Employee updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Employees]
+      summary: Delete employee (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Employee deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /suppliers:
+    get:
+      tags: [Suppliers]
+      summary: List suppliers
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Supplier list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Supplier'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Suppliers]
+      summary: Create supplier (ADMIN, STOCK)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierInput'
+      responses:
+        '201':
+          description: Supplier created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supplier'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /suppliers/{id}:
+    get:
+      tags: [Suppliers]
+      summary: Get supplier detail with order/performance data
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Supplier detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Suppliers]
+      summary: Update supplier (ADMIN, STOCK)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierInput'
+      responses:
+        '200':
+          description: Supplier updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supplier'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Suppliers]
+      summary: Delete supplier (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Supplier deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /purchase-orders:
+    post:
+      tags: [Purchase Orders]
+      summary: Create supplier purchase order (ADMIN, STOCK)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrderInput'
+      responses:
+        '201':
+          description: Purchase order created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    get:
+      tags: [Purchase Orders]
+      summary: List purchase orders
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StatusQuery'
+        - $ref: '#/components/parameters/SupplierIdQuery'
+      responses:
+        '200':
+          description: Purchase orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PurchaseOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /purchase-orders/{id}:
+    get:
+      tags: [Purchase Orders]
+      summary: Get purchase order detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Purchase order detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Purchase Orders]
+      summary: Update draft purchase order (ADMIN, STOCK)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrderInput'
+      responses:
+        '200':
+          description: Purchase order updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Purchase Orders]
+      summary: Delete draft purchase order (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Purchase order deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /purchase-orders/{id}/status:
+    put:
+      tags: [Purchase Orders]
+      summary: Update purchase-order status (ADMIN, STOCK)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [DRAFT, ORDERED, RECEIVED, CANCELLED]
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /customer-orders:
+    post:
+      tags: [Customer Orders]
+      summary: Create customer order (ADMIN, CASHIER)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerOrderInput'
+      responses:
+        '201':
+          description: Customer order created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    get:
+      tags: [Customer Orders]
+      summary: List customer orders
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/StatusQuery'
+        - $ref: '#/components/parameters/DeliveryDateQuery'
+      responses:
+        '200':
+          description: Customer orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CustomerOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /customer-orders/{id}:
+    get:
+      tags: [Customer Orders]
+      summary: Get customer order detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Customer order detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Customer Orders]
+      summary: Update pending customer order (ADMIN, CASHIER)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerOrderInput'
+      responses:
+        '200':
+          description: Customer order updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Customer Orders]
+      summary: Delete pending customer order (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Customer order deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /customer-orders/{id}/status:
+    put:
+      tags: [Customer Orders]
+      summary: Update customer-order status (ADMIN, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [PENDING, IN_PRODUCTION, READY, DELIVERED, CANCELLED]
+      responses:
+        '200':
+          description: Order status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /analytics/export:
+    get:
+      tags: [Analytics]
+      summary: Export consolidated analytics dataset (ADMIN)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Analytics export payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsExport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    SearchQuery:
+      name: search
+      in: query
+      required: false
+      schema:
+        type: string
+    CategoryIdQuery:
+      name: category_id
+      in: query
+      required: false
+      schema:
+        type: integer
+    ProductIdQuery:
+      name: product_id
+      in: query
+      required: false
+      schema:
+        type: integer
+    IngredientStatusQuery:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [low_stock, expiring_soon]
+    PeriodQuery:
+      name: period
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [day, week, month]
+    StartDateQuery:
+      name: start_date
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date
+    EndDateQuery:
+      name: end_date
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date
+    StatusQuery:
+      name: status
+      in: query
+      required: false
+      schema:
+        type: string
+    SupplierIdQuery:
+      name: supplier_id
+      in: query
+      required: false
+      schema:
+        type: integer
+    DeliveryDateQuery:
+      name: delivery_date
+      in: query
+      required: false
+      schema:
+        type: string
+        format: date
+
+  responses:
+    Unauthorized:
+      description: Authentication required or token invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: User lacks required role
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: Invalid request payload or business rule violation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        status:
+          type: integer
+          nullable: true
+      required: [error]
+
+    SuccessMessage:
+      type: object
+      properties:
+        message:
+          type: string
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          example: UP
+        timestamp:
+          type: string
+          format: date-time
+        service:
+          type: string
+        walking_skeleton:
+          type: boolean
+        sprint1:
+          type: boolean
+
+    ForecastResponse:
+      type: object
+      required: [value, confidence, status]
+      properties:
+        value:
+          type: number
+          nullable: true
+        confidence:
+          type: object
+          required: [level, interval]
+          properties:
+            level:
+              type: string
+              enum: [haute, moyenne, faible]
+            interval:
+              type: array
+              items:
+                type: number
+              minItems: 2
+              maxItems: 2
+        status:
+          type: string
+          enum: [ok, insufficient_data]
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [ADMIN, EMPLOYEE, STOCK, PRODUCTION, CASHIER]
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    RecipeInput:
+      type: object
+      required: [ingredient_id, quantity_required]
+      properties:
+        ingredient_id:
+          type: integer
+        quantity_required:
+          type: number
+
+    RecipeItem:
+      type: object
+      properties:
+        recipe_item_id:
+          type: integer
+        ingredient_id:
+          type: integer
+        ingredient_name:
+          type: string
+        unit:
+          type: string
+        quantity_required:
+          type: number
+
+    Product:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        price:
+          type: number
+        category_id:
+          type: integer
+          nullable: true
+        category_name:
+          type: string
+          nullable: true
+        stock_quantity:
+          type: integer
+        is_active:
+          type: boolean
+        ingredients:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecipeItem'
+
+    RecipeUpdateResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        recipe:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecipeItem'
+
+    ProductionResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        result:
+          type: object
+          properties:
+            product:
+              $ref: '#/components/schemas/Product'
+            produced_quantity:
+              type: integer
+            updated_ingredients:
+              type: array
+              items:
+                $ref: '#/components/schemas/Ingredient'
+            alerts:
+              type: array
+              items:
+                $ref: '#/components/schemas/Ingredient'
+
+    Ingredient:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        unit:
+          type: string
+        current_stock:
+          type: number
+        minimum_stock:
+          type: number
+        cost_per_unit:
+          type: number
+        expiration_date:
+          type: string
+          format: date
+          nullable: true
+        supplier_id:
+          type: integer
+          nullable: true
+        supplier_name:
+          type: string
+          nullable: true
+        is_low_stock:
+          type: boolean
+          nullable: true
+        is_expiring_soon:
+          type: boolean
+          nullable: true
+
+    StockMovement:
+      type: object
+      properties:
+        id:
+          type: integer
+        ingredient_id:
+          type: integer
+        movement_type:
+          type: string
+        quantity:
+          type: number
+        reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        batch_number:
+          type: string
+          nullable: true
+
+    IngredientDetail:
+      type: object
+      properties:
+        ingredient:
+          $ref: '#/components/schemas/Ingredient'
+        movements:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockMovement'
+
+    StockMovementRequest:
+      type: object
+      required: [movement_type, quantity]
+      properties:
+        movement_type:
+          type: string
+          enum: [IN, OUT, WASTE, ADJUSTMENT]
+        quantity:
+          type: number
+        reason:
+          type: string
+        expiration_date:
+          type: string
+          format: date
+        batch_number:
+          type: string
+
+    StockMovementResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        ingredient:
+          $ref: '#/components/schemas/Ingredient'
+
+    AlertSummary:
+      type: object
+      properties:
+        low_stock_count:
+          type: integer
+        expiring_soon_count:
+          type: integer
+        low_stock:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ingredient'
+        expiring_soon:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ingredient'
+
+    SaleItem:
+      type: object
+      properties:
+        product_id:
+          type: integer
+        quantity:
+          type: integer
+        unit_price:
+          type: number
+        subtotal:
+          type: number
+
+    SaleInput:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SaleItem'
+        paymentMethod:
+          type: string
+        customerName:
+          type: string
+          nullable: true
+        customerPhone:
+          type: string
+          nullable: true
+
+    Sale:
+      type: object
+      properties:
+        id:
+          type: integer
+        cashier_id:
+          type: integer
+        total_amount:
+          type: number
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        payment_method:
+          type: string
+          nullable: true
+        customer_name:
+          type: string
+          nullable: true
+        customer_phone:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SaleItem'
+
+    SalesMetrics:
+      type: object
+      additionalProperties: true
+
+    Employee:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        user_name:
+          type: string
+          nullable: true
+        user_email:
+          type: string
+          format: email
+          nullable: true
+        user_role:
+          type: string
+          nullable: true
+        first_name:
+          type: string
+        last_name:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        job_title:
+          type: string
+          nullable: true
+        hire_date:
+          type: string
+          format: date
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    EmployeeInput:
+      type: object
+      required: [first_name, last_name]
+      properties:
+        user_id:
+          type: integer
+          nullable: true
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        role:
+          type: string
+        phone:
+          type: string
+        job_title:
+          type: string
+        hire_date:
+          type: string
+          format: date
+        address:
+          type: string
+
+    Schedule:
+      type: object
+      properties:
+        id:
+          type: integer
+        employee_id:
+          type: integer
+        shift_start:
+          type: string
+          format: date-time
+        shift_end:
+          type: string
+          format: date-time
+        notes:
+          type: string
+          nullable: true
+        employee_first_name:
+          type: string
+          nullable: true
+        employee_last_name:
+          type: string
+          nullable: true
+
+    ScheduleInput:
+      type: object
+      required: [employee_id, shift_start, shift_end]
+      properties:
+        employee_id:
+          type: integer
+        shift_start:
+          type: string
+          format: date-time
+        shift_end:
+          type: string
+          format: date-time
+        notes:
+          type: string
+
+    Leave:
+      type: object
+      properties:
+        id:
+          type: integer
+        employee_id:
+          type: integer
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        reason:
+          type: string
+          nullable: true
+        status:
+          type: string
+        employee_first_name:
+          type: string
+          nullable: true
+        employee_last_name:
+          type: string
+          nullable: true
+
+    LeaveInput:
+      type: object
+      required: [employee_id, start_date, end_date]
+      properties:
+        employee_id:
+          type: integer
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        reason:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED]
+
+    Supplier:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        contact_person:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        lead_time:
+          type: string
+          nullable: true
+        quality:
+          type: string
+          nullable: true
+        rating:
+          type: number
+          nullable: true
+
+    SupplierInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        contact_person:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        address:
+          type: string
+        lead_time:
+          type: string
+        quality:
+          type: string
+        rating:
+          type: number
+
+    SupplierDetail:
+      type: object
+      allOf:
+        - $ref: '#/components/schemas/Supplier'
+      properties:
+        purchase_orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseOrder'
+        performance:
+          type: object
+          properties:
+            purchase_orders:
+              type: integer
+            total_spend:
+              type: number
+            ingredients_count:
+              type: integer
+        ingredients:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ingredient'
+
+    PurchaseOrderItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        purchase_order_id:
+          type: integer
+        ingredient_id:
+          type: integer
+        quantity_ordered:
+          type: number
+        unit_cost:
+          type: number
+
+    PurchaseOrderInput:
+      type: object
+      required: [supplier_id, items]
+      properties:
+        supplier_id:
+          type: integer
+        items:
+          type: array
+          items:
+            type: object
+            required: [ingredient_id, quantity_ordered, unit_cost]
+            properties:
+              ingredient_id:
+                type: integer
+              quantity_ordered:
+                type: number
+              unit_cost:
+                type: number
+
+    PurchaseOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+        supplier_id:
+          type: integer
+        status:
+          type: string
+        total_cost:
+          type: number
+        created_by:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseOrderItem'
+
+    CustomerOrderItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        customer_order_id:
+          type: integer
+        product_id:
+          type: integer
+        quantity:
+          type: integer
+        unit_price:
+          type: number
+        subtotal:
+          type: number
+
+    CustomerOrderInput:
+      type: object
+      required: [customer_name, customer_phone, delivery_date, items]
+      properties:
+        customer_name:
+          type: string
+        customer_phone:
+          type: string
+        delivery_date:
+          type: string
+          format: date
+        items:
+          type: array
+          items:
+            type: object
+            required: [product_id, quantity]
+            properties:
+              product_id:
+                type: integer
+              quantity:
+                type: integer
+        special_instructions:
+          type: string
+          nullable: true
+
+    CustomerOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+        customer_name:
+          type: string
+        customer_phone:
+          type: string
+        delivery_date:
+          type: string
+          format: date
+        status:
+          type: string
+        total_price:
+          type: number
+        special_instructions:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomerOrderItem'
+
+    AnalyticsExport:
+      type: object
+      additionalProperties: true
+
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Products]
+      summary: Delete product (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Product deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+/products/{id}/recipe:
+    get:
+      tags: [Products]
+      summary: Get a product recipe (public)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Recipe items
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RecipeItem' }
+    post:
+      tags: [Products]
+      summary: Set / replace a product recipe (ADMIN, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/RecipeInput' }
+      responses:
+        '200':
+          description: Recipe updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  recipe:
+                    type: array
+                    items: { $ref: '#/components/schemas/RecipeItem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /products/{id}/produce:
+    post:
+      tags: [Products]
+      summary: Produce a batch (deducts ingredient stock atomically) (ADMIN, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quantity]
+              properties:
+                quantity: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Production completed; ingredients updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  result:
+                    type: object
+                    properties:
+                      product: { $ref: '#/components/schemas/Product' }
+                      produced_quantity: { type: integer }
+                      updated_ingredients:
+                        type: array
+                        items: { $ref: '#/components/schemas/Ingredient' }
+                      alerts:
+                        type: array
+                        items: { $ref: '#/components/schemas/Ingredient' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /ingredients:
+    get:
+      tags: [Ingredients]
+      summary: List ingredients with stock + alert flags (public)
+      parameters:
+        - { name: search, in: query, required: false, schema: { type: string } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [low_stock, expiring_soon] } }
+      responses:
+        '200':
+          description: List of ingredients
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Ingredient' }
+    post:
+      tags: [Ingredients]
+      summary: Create ingredient (ADMIN, STOCK, PRODUCTION)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, unit]
+              properties:
+                name: { type: string }
+                unit: { type: string }
+                current_stock: { type: number }
+                minimum_stock: { type: number }
+                cost_per_unit: { type: number }
+                expiration_date: { type: string, format: date }
+                supplier_id: { type: integer, nullable: true }
+      responses:
+        '201':
+          description: Ingredient created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ingredient' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+/ingredients/alerts:
+    get:
+      tags: [Ingredients]
+      summary: Global low-stock / expiring alerts (public)
+      responses:
+        '200':
+          description: Alert summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  low_stock_count: { type: integer }
+                  expiring_soon_count: { type: integer }
+                  low_stock:
+                    type: array
+                    items: { $ref: '#/components/schemas/Ingredient' }
+                  expiring_soon:
+                    type: array
+                    items: { $ref: '#/components/schemas/Ingredient' }
+
+  /ingredients/{id}:
+    get:
+      tags: [Ingredients]
+      summary: Get ingredient + recent movements (public)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Ingredient detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ingredient: { $ref: '#/components/schemas/Ingredient' }
+                  movements:
+                    type: array
+                    items: { $ref: '#/components/schemas/StockMovement' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Ingredients]
+      summary: Update ingredient (ADMIN, STOCK, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                unit: { type: string }
+                minimum_stock: { type: number }
+                cost_per_unit: { type: number }
+                expiration_date: { type: string, format: date }
+                supplier_id: { type: integer, nullable: true }
+      responses:
+        '200':
+          description: Ingredient updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ingredient' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Ingredients]
+      summary: Delete ingredient (ADMIN; refused if used in recipes)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Ingredient deleted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /ingredients/{id}/movement:
+    post:
+      tags: [Ingredients]
+      summary: Apply stock movement (IN/OUT/WASTE/ADJUSTMENT) (ADMIN, STOCK, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [movement_type, quantity]
+              properties:
+                movement_type: { type: string, enum: [IN, OUT, WASTE, ADJUSTMENT] }
+                quantity: { type: number }
+                reason: { type: string }
+                expiration_date: { type: string, format: date }
+                batch_number: { type: string }
+      responses:
+        '200':
+          description: Stock movement recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  ingredient: { $ref: '#/components/schemas/Ingredient' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /sales:
+    get:
+      tags: [Sales]
+      summary: List sales (ADMIN, CASHIER, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: period, in: query, required: false, schema: { type: string, enum: [day, week, month] } }
+        - { name: product_id, in: query, required: false, schema: { type: integer } }
+        - { name: start_date, in: query, required: false, schema: { type: string, format: date } }
+        - { name: end_date, in: query, required: false, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: List of sales
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Sale' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Sales]
+      summary: Record a sale (deducts product stock) (ADMIN, CASHIER, PRODUCTION)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaleInput' }
+      responses:
+        '201':
+          description: Sale created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Sale' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+/sales/history:
+    get:
+      tags: [Sales]
+      summary: Sales history with identical filters to GET /sales (ADMIN, CASHIER, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: period, in: query, required: false, schema: { type: string, enum: [day, week, month] } }
+        - { name: product_id, in: query, required: false, schema: { type: integer } }
+        - { name: start_date, in: query, required: false, schema: { type: string, format: date } }
+        - { name: end_date, in: query, required: false, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: List of sales
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Sale' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /sales/metrics:
+    get:
+      tags: [Sales]
+      summary: Sales KPIs (day/week/month revenue, count, top products) (ADMIN, CASHIER, PRODUCTION)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Sales metrics
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SalesMetrics' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /sales/{id}:
+    get:
+      tags: [Sales]
+      summary: Get a sale with items and payments (ADMIN, CASHIER, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Sale detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Sale' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /sales/{id}/ticket/html:
+    get:
+      tags: [Sales]
+      summary: HTML cash-register ticket (ADMIN, CASHIER, PRODUCTION)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: HTML ticket
+          content:
+            text/html:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /employees:
+    get:
+      tags: [Employees]
+      summary: List employee records (EMPLOYEE sees only self)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of employees
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Employee' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Employees]
+      summary: Create employee + user account (ADMIN)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmployeeInput' }
+      responses:
+        '201':
+          description: Employee created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Employee' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /employees/{id}:
+    get:
+      tags: [Employees]
+      summary: Get employee (EMPLOYEE sees only self)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Employee detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Employee' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Employees]
+      summary: Update employee (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id: { type: integer }
+                first_name: { type: string }
+                last_name: { type: string }
+                phone: { type: string }
+                job_title: { type: string }
+                hire_date: { type: string, format: date }
+                address: { type: string }
+      responses:
+        '200':
+          description: Employee updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Employee' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Employees]
+      summary: Delete employee (ADMIN)
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Employee deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }

@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+*.bak
+*.backup
+
+# Local databases
+*.sqlite3
+*.sqlite3-*
+dev.sqlite3
+dev.sqlite3.bak
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs & temp
+*.log
+coverage/
+tmp/
+test-results.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Accidental duplication
+backend/backend/
+
+# Temporary/Debug files
+a.txt
+*.tmp
+.vscode/settings.json
+
+# AI Service
+ai-service/.venv/
+ai-service/__pycache__/
+ai-service/*.egg-info/
+ai-service/data/

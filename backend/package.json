@@ -1,0 +1,33 @@
+{
+  "name": "bakery-backend",
+  "version": "1.0.0",
+  "description": "Bakery platform central backend API",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "migrate": "knex migrate:latest",
+    "seed": "knex seed:run",
+    "test": "jest --runInBand",
+    "test:playwright": "npx playwright test --config=playwright.config.js"
+  },
+  "jest": {
+    "testPathIgnorePatterns": ["/tests/playwright/"]
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^5.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "knex": "^3.1.0",
+    "pg": "^8.11.5",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "jest": "^29.7.0",
+    "playwright": "^1.62.1",
+    "supertest": "^6.3.4"
+  }
+}
