@@ -33,6 +33,12 @@ a.txt
 .vscode/settings.json
 
 # AI Service
+# Python (catch-all, any location)
+__pycache__/
+*.pyc
+*.pyo
+
+# AI Service
 ai-service/.venv/
 ai-service/__pycache__/
 ai-service/*.egg-info/

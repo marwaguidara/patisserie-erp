@@ -45,7 +45,8 @@ def extract_and_store_etl() -> dict:
         "period_end": end_date.isoformat() if end_date is not None else None,
         "product_count": int(product_df["id"].nunique()) if not product_df.empty else 0,
         "rows": int(len(df)),
-        "source": "postgres_read_only_sales"
+        "source": "read_only_sales"
     }
     metadata_path.write_text(json.dumps(coverage, indent=2), encoding="utf-8")
     return coverage
+

@@ -6,7 +6,7 @@ DATA_DIR = BASE_DIR / "data"
 VERSION_DIR = DATA_DIR / "v1"
 CACHE_DIR = DATA_DIR / "cache"
 
-DB_DRIVER = os.getenv("DB_DRIVER", "postgres").lower()
+DB_DRIVER = os.getenv("DB_DRIVER", "sqlite").lower()
 DB_HOST = os.getenv("DB_HOST", "postgres")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "bakery_db")
@@ -14,6 +14,8 @@ DB_USER = os.getenv("DB_USER", "bakery_user")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "bakery_password")
 LOCAL_SQLITE_PATH = os.getenv("LOCAL_SQLITE_PATH", str(Path(__file__).resolve().parents[2] / "backend" / "dev.sqlite3"))
 
+# Default to SQLite for local dev (matches backend dev.sqlite3).
+# In Docker Compose, DB_DRIVER is explicitly set to "postgres" by the environment.
 if os.getenv("DATABASE_URL"):
     READ_ONLY_DB_URL = os.getenv("DATABASE_URL")
 elif DB_DRIVER == "sqlite":

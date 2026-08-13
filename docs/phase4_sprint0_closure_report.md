@@ -1,9 +1,31 @@
 # Phase 4 Sprint 0 Closure Report
 ## AI Walking Skeleton — Foundational Integration & Validation
 
-**Date:** 2026-07-09  
-**Sprint:** Phase 4 — Sprint 0 (IA & walking skeleton)  
-**Status:** ✅ COMPLETE
+**Date:** 2026-07-09 (updated 2026-08-13)
+**Sprint:** Phase 4 — Sprint 0 (IA & walking skeleton)
+**Status:** ✅ LOCALLY COMPLETE (Docker/CI validation pending — non-verifiable here)
+
+---
+
+## Final Closure Addendum (2026-08-13)
+
+Remaining Sprint 0 validation residue closed in this final pass, all with live command output:
+
+1. **Forecast AFTER = `ok`:** created >14 days of historical sales (product_id=30 → 16 distinct
+   days), ran ETL, re-ran forecast → `{"value":3.0,"confidence":{"level":"moyenne",
+   "interval":[2.25,3.75]},"status":"ok"}` (was `insufficient_data`). Full BEFORE/AFTER JSON in
+   `docs/phase4_sprint0_validation_report.md` §2.1.
+2. **Frontend proof:** dashboard rendered headless (Playwright/Chromium). Confidence indicator
+   visible (`#forecast-confidence` = "moyenne / ok") and a real `GET /forecast` network request
+   observed (200 OK). Evidence: `ai-service/data/ui_evidence/` (git-ignored) + validation report.
+3. **Cache defect fixed:** `set_cached_result` stored `str(dict)` (single quotes) while the
+   route `json.loads`'d it → every cache hit for an `ok` result errored into spurious
+   `insufficient_data`. Fixed by storing real JSON, defensive invalidate-and-recompute, and a
+   SQLite busy timeout. 12 concurrent `/forecast` calls now return `ok` 12/12. See §3.1.
+4. **Docker / Docker Compose:** **NOT EXECUTED — Docker is unavailable** in this environment. All
+   Docker statements in this report are configuration intent, not executed proof. They must be
+   run in a Docker-capable environment (see "Prerequisites for Sprint 1" below) before declaring
+   deployment-level closure.
 
 ---
 
@@ -13,7 +35,8 @@ Phase 4 Sprint 0 establishes a **minimal, real, end-to-end AI foundation** for t
 
 **Key Constraint:** Strict read-only integration to core business modules. No duplication of sales logic, stock management, or revenue computation. AI service observes, never rewrites.
 
-**Result:** ✅ Walking skeleton is **production-ready for Phase 4 Sprint 1** (advanced modeling).
+**Result:** ✅ Walking skeleton is **locally validated for Phase 4 Sprint 1** (advanced modeling).
+Deployment-level (Docker/Compose/CI) verification is **pending** — see the addendum above.
 
 ---
 
@@ -137,7 +160,7 @@ Passed: 2/2 (Python 3.12 + pytest)
 validate_ai_e2e.js
   [1/4] Health check             ✓ Service running
   [2/4] ETL export               ✓ Parquet + metadata generated
-  [3/4] Forecast call            ✓ Contract correct (status=insufficient_data)
+  [3/4] Forecast call            ✓ Contract correct (status=insufficient_data; `ok` also proven — see addendum)
   [4/4] Contract validation      ✓ Future endpoints → 501
 Result: All E2E validation tests passed
 ```
@@ -323,10 +346,10 @@ node backend/tools/validate_ai_e2e.js
 ## Sign-Off
 
 ### What This Sprint Proved
-✅ AI infrastructure layer is **deployable and testable**  
+✅ AI infrastructure layer is **locally testable** (Docker deployability defined but not executed — no Docker)  
 ✅ Read-only DB integration **works end-to-end**  
-✅ Forecast endpoint **returns valid contracts** (value + confidence + status)  
-✅ Frontend **can consume AI API** without breaking existing UX  
+✅ Forecast endpoint **returns valid contracts** (value + confidence + status; `ok` + `insufficient_data`)  
+✅ Frontend **can consume AI API** (rendered, confidence visible, real `/forecast` network call)  
 ✅ Future endpoints are **stubbed and versioned** for Sprint 1+
 
 ### What's Ready for Phase 4 Sprint 1
@@ -338,7 +361,7 @@ node backend/tools/validate_ai_e2e.js
 
 ### Prerequisites for Sprint 1 (Before Starting)
 ✅ Confirm baseline forecast is acceptable to stakeholders  
-✅ Validate Docker Compose build passes in CI/CD  
+⚠️ **Run Docker/CI validation in a Docker-capable environment** — Docker was unavailable here, so `docker build`, `docker-compose up`, and the CI pipeline are **not yet verified** (config present, unproven)  
 ✅ Schedule time for advanced model development (ARIMA, Prophet, etc.)  
 ✅ Plan feature engineering roadmap (seasonality, holidays, etc.)  
 ✅ Do NOT ship production-recommendations, anomalies, or segmentation yet
@@ -348,7 +371,7 @@ node backend/tools/validate_ai_e2e.js
 ## Closure Artifacts
 
 ### Generated Files
-- `ai-service/` (complete package, ready to deploy)
+- `ai-service/` (locally validated package; deployment not run — no Docker)
 - `docs/openapi.yaml` (extended with /forecast + future stubs)
 - `frontend/app.js` (forecast panel integrated)
 - `infra/docker-compose.yml` (ai-service container added)
@@ -414,6 +437,6 @@ docker-compose -f infra/docker-compose.yml up -d ai-service
 
 ---
 
-**Report Generated:** 2026-07-09  
+**Report Generated:** 2026-07-09 (updated 2026-08-13)  
 **Prepared By:** Phase 4 AI Sprint Team  
-**Status:** Ready for Phase 4 Sprint 1
+**Status:** Locally validated; Sprint 1 ready once Docker/CI runs (see addendum + prerequisites)

@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -9,7 +10,12 @@ CACHE_DB.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(CACHE_DB)
+    # FastAPI runs sync handlers in a thread pool, so multiple /forecast calls
+    # can write to the SQLite cache concurrently. Without a busy timeout these
+    # concurrent writers intermittently raise "database is locked", which the
+    # route's blanket except turns into a spurious status="insufficient_data".
+    conn = sqlite3.connect(CACHE_DB, timeout=30.0)
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS ai_results_cache (
@@ -57,7 +63,7 @@ def set_cached_result(endpoint: str, product_id: int, period: str, payload: dict
     conn.execute(
         "INSERT INTO ai_results_cache (key, endpoint, product_id, period, model_version, payload, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(key) DO UPDATE SET payload = excluded.payload, created_at = excluded.created_at, expires_at = excluded.expires_at",
-        (key, endpoint, product_id, period, MODEL_VERSION, str(payload), created_at, expires_at),
+        (key, endpoint, product_id, period, MODEL_VERSION, json.dumps(payload), created_at, expires_at),
     )
     conn.commit()
     conn.close()

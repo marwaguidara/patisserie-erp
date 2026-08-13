@@ -34,7 +34,12 @@ def forecast(product_id: int, horizon_days: int = 7) -> dict[str, Any]:
         cache_key = f"forecast|{product_id}|{horizon_days}d"
         cached = get_cached_result("forecast", product_id, f"{horizon_days}d")
         if cached:
-            return json.loads(cached)
+            try:
+                return json.loads(cached)
+            except Exception:
+                # Defensive: a corrupt/stale cache entry must not mask a valid
+                # forecast. Drop it and recompute instead of erroring out.
+                invalidate_cache("forecast", product_id, f"{horizon_days}d")
         
         # Compute forecast if not cached
         result = naive_forecast_for_product(product_id, days=horizon_days)

@@ -46,6 +46,7 @@
       <button class="tab-btn" data-tab="categories">🏷️ Catégories</button>
       <button class="tab-btn" data-tab="purchase-orders">🚚 Commandes Fournisseurs</button>
       <button class="tab-btn" data-tab="customer-orders">🎂 Commandes Clients</button>
+      <button class="tab-btn" data-tab="forecast">🔮 Prévision IA</button>
     </nav>
 
     <!-- Main Content -->
@@ -168,36 +169,7 @@
           </div>
         </div>
 
-        <div class="card margin-bottom-20">
-          <div class="section-header">
-            <div>
-              <h3>📈 Prévision IA - Produit</h3>
-              <p class="section-desc">Prévision calculée par le service IA réel avec confiance et statut explicites.</p>
-            </div>
-          </div>
-          <div class="filter-bar">
-            <select id="forecast-product-select" class="form-control filter-select"></select>
-            <button class="btn btn-primary" id="refresh-forecast-btn">Actualiser la prévision</button>
-          </div>
-          <div id="forecast-panel" class="card" style="background:#0b1220; border:1px solid #1e293b; color:white; padding:18px; border-radius:12px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
-              <div>
-                <div style="font-size:12px; letter-spacing:.08em; text-transform:uppercase; opacity:.7;">Valeur prévue</div>
-                <div id="forecast-value" style="font-size:2rem; font-weight:700;">--</div>
-              </div>
-              <div>
-                <div style="font-size:12px; letter-spacing:.08em; text-transform:uppercase; opacity:.7;">Confiance</div>
-                <div id="forecast-confidence" style="font-size:1.1rem; font-weight:600;">--</div>
-              </div>
-              <div>
-                <div style="font-size:12px; letter-spacing:.08em; text-transform:uppercase; opacity:.7;">Statut</div>
-                <div id="forecast-status" style="font-size:1.1rem; font-weight:600;">--</div>
-              </div>
-            </div>
-            <div id="forecast-interval" style="margin-top:12px; opacity:.8;">Intervalle: --</div>
-          </div>
-        </div>
-
+        <!-- Sales Metrics -->
         <div class="metric-grid" id="sales-metrics-grid">
           <!-- KPI cards populated dynamically -->
         </div>
@@ -284,6 +256,67 @@
                 <tbody id="sales-history-tbody"></tbody>
               </table>
             </div>
+          </div>
+        </div>
+      </section>
+
+      
+      <!-- Tab: Forecast / Prévision IA -->
+      <section id="tab-forecast" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2>🔮 Prévision IA</h2>
+            <p class="section-desc">Prédictions de demande basées sur l'historique de ventes. Exécutez l'ETL pour rafraîchir les données, puis consultez la prévision avec son indicateur de confiance.</p>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-secondary" id="run-etl-btn">🔄 Lancer ETL</button>
+            <button class="btn btn-secondary" id="refresh-forecast-btn">Actualiser la prévision</button>
+          </div>
+        </div>
+
+        <div class="card margin-bottom-20">
+          <div class="section-header">
+            <div>
+              <h3>📈 Prévision pour un produit</h3>
+              <p class="section-desc">Sélectionnez un produit pour voir sa prévision de demande avec l'indicateur de confiance.</p>
+            </div>
+          </div>
+          <div class="filter-bar">
+            <select id="forecast-product-select" class="form-control filter-select"></select>
+          </div>
+
+          <div id="forecast-panel" class="card" style="background:#0b1220; border:1px solid #1e293b; color:white; padding:18px; border-radius:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+              <div>
+                <div style="font-size:12px; letter-spacing:.08em; text-transform:uppercase; opacity:.7;">Valeur prévue</div>
+                <div id="forecast-value" style="font-size:2rem; font-weight:700;">--</div>
+              </div>
+              <div>
+                <div style="font-size:12px; letter-spacing:.08em; text-transform:uppercase; opacity:.7;">Confiance</div>
+                <div id="forecast-confidence" style="font-size:1.1rem; font-weight:600;">--</div>
+              </div>
+              <div>
+                <div style="font-size:12px; letter-spacing:.08em; text-transform:uppercase; opacity:.7;">Statut</div>
+                <div id="forecast-status" style="font-size:1.1rem; font-weight:600;">--</div>
+              </div>
+            </div>
+            <div id="forecast-interval" style="margin-top:12px; opacity:.8;">Intervalle: --</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-header">
+            <h3>📋 Documentation API IA</h3>
+          </div>
+          <div style="padding: 12px;">
+            <p style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:8px;">Le service d'IA est accessible localement à l'adresse suivante :</p>
+            <code style="background:rgba(0,0,0,0.3); padding:4px 8px; border-radius:4px; font-size:0.85rem;">http://127.0.0.1:8000/forecast?product_id=&lt;id&gt;</code>
+            <p style="font-size:0.8rem; color:var(--text-secondary); margin-top:12px;">Endpoints disponibles :</p>
+            <ul style="list-style:none; padding:0; margin-top:4px; font-size:0.85rem;">
+              <li style="margin-bottom:4px;">• <code>GET /health</code> — état du service</li>
+              <li style="margin-bottom:4px;">• <code>GET /forecast?product_id=X</code> — prévision avec confiance et statut</li>
+              <li style="margin-bottom:4px;">• <code>POST /etl/run</code> — extraction des historiques de vente</li>
+            </ul>
           </div>
         </div>
       </section>
@@ -949,3 +982,4 @@
   <script src="app.js"></script>
 </body>
 </html>
+

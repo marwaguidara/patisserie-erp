@@ -50,6 +50,7 @@ services:
     ports:
       - "${AI_SERVICE_PORT:-8000}:8000"
     environment:
+      DB_DRIVER: postgres
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB:-bakery_db}
@@ -75,3 +76,4 @@ services:
 volumes:
   postgres_data:
   ai_service_data:
+

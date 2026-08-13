@@ -4,6 +4,22 @@
 
 All validation tasks have been **successfully completed** with **command-backed evidence**. The AI walking skeleton is proven to work end-to-end with real data, all backend tests pass with zero regression, and caching is fully implemented and tested.
 
+> **Addendum (2026-08-13) — remaining Sprint 0 residue items closed:**
+> - **Forecast AFTER = `ok`:** created >14 days of historical sales (product_id=30, 16 distinct
+>   days), ran ETL, and obtained `status="ok"` `{"value":3.0,...}` (was `insufficient_data`
+>   before). BEFORE/AFTER JSON recorded in `docs/phase4_sprint0_validation_report.md` §2.1.
+> - **Frontend proof:** rendered the dashboard in headless Chromium (Playwright). The
+>   confidence indicator is **visible** (`#forecast-confidence` = "moyenne / ok") and a **real
+>   `GET /forecast` network request** was observed (200 OK). Screenshots + DOM snapshot saved
+>   under `ai-service/data/ui_evidence/` (git-ignored).
+> - **Cache defect fixed:** cache stored `str(dict)` (single quotes) but the route decoded with
+>   `json.loads` → every cache hit for an `ok` result threw and fell back to spurious
+>   `insufficient_data`. Now stores real JSON + defensive invalidate-and-recompute + busy timeout.
+>   12 concurrent `/forecast` calls return `ok` 12/12. See validation report §3.1.
+> - **Docker / Docker Compose remain NOT VERIFIED** — Docker is unavailable in this environment.
+>   All Docker statements are config intent, not executed proof.
+
+
 ---
 
 ## What Was Accomplished This Session
@@ -284,7 +300,9 @@ cd backend && npm test -- --runInBand
 3. Git commits with timestamp and evidence
 4. Comprehensive test coverage proving functionality
 
-The Phase 4 Sprint 0 walking skeleton is **ready for production use** as a baseline for Sprint 1 feature development.
+The Phase 4 Sprint 0 walking skeleton is **locally validated** as a baseline for Sprint 1 feature
+development. Docker/Compose execution and the CI pipeline have **not** been verified in this
+environment (Docker unavailable), so production deployment readiness is **pending** a Docker-capable run.
 
 **DO NOT start Sprint 1 until you have:**
 1. Reviewed `docs/phase4_sprint0_validation_report.md`
@@ -293,5 +311,5 @@ The Phase 4 Sprint 0 walking skeleton is **ready for production use** as a basel
 
 ---
 
-**Report Generated:** 2026-08-12  
-**Status:** COMPLETE & VERIFIED ✅
+**Report Generated:** 2026-08-12 (updated 2026-08-13)  
+**Status:** COMPLETE ✅ (local validation; Docker/CI pending) — see addendum above

@@ -1,4 +1,8 @@
 const API_BASE = '/api';
+// AI Service URL: direct connection in local dev, proxied via nginx in Docker
+const AI_SERVICE_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? 'http://127.0.0.1:8000'
+  : '/ai';
 
 let currentUser = null;
 let authToken = localStorage.getItem('bakery_jwt') || null;
@@ -15,11 +19,11 @@ let customerOrdersList = [];
 // Backend authorization remains the single source of truth; these rules
 // only control what the UI reveals to each role.
 const ROLE_TABS = {
-  ADMIN: ['catalog', 'ingredients', 'production', 'sales', 'employees', 'suppliers', 'categories', 'purchase-orders', 'customer-orders'],
-  STOCK: ['ingredients', 'suppliers', 'purchase-orders'],
-  CASHIER: ['sales', 'customer-orders'],
-  PRODUCTION: ['catalog', 'ingredients', 'production', 'customer-orders', 'purchase-orders'],
-  EMPLOYEE: ['employees']
+  ADMIN: ['catalog', 'ingredients', 'production', 'sales', 'employees', 'suppliers', 'categories', 'purchase-orders', 'customer-orders', 'forecast'],
+  STOCK: ['ingredients', 'suppliers', 'purchase-orders', 'forecast'],
+  CASHIER: ['sales', 'customer-orders', 'forecast'],
+  PRODUCTION: ['catalog', 'ingredients', 'production', 'customer-orders', 'purchase-orders', 'forecast'],
+  EMPLOYEE: ['employees', 'forecast']
 };
 
 // Static header action buttons -> roles allowed to see them.
@@ -136,8 +140,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('sales-filter-start').addEventListener('change', loadSalesHistory);
   document.getElementById('sales-filter-end').addEventListener('change', loadSalesHistory);
   document.getElementById('sales-form').addEventListener('submit', handleSalesSubmit);
-  document.getElementById('forecast-product-select').addEventListener('change', loadForecast);
+      document.getElementById('forecast-product-select').addEventListener('change', loadForecast);
   document.getElementById('refresh-forecast-btn').addEventListener('click', loadForecast);
+  document.getElementById('run-etl-btn').addEventListener('click', runEtl);
 
   // Search & Filter Events
   document.getElementById('search-products').addEventListener('input', renderProducts);
@@ -319,7 +324,7 @@ async function loadForecast() {
   }
 
   try {
-    const res = await fetch(`http://localhost:8000/forecast?product_id=${productId}&horizon_days=7`);
+            const res = await fetch(`${AI_SERVICE_URL}/forecast?product_id=${productId}&horizon_days=7`);
     if (!res.ok) {
       throw new Error(`Erreur AI service ${res.status}`);
     }
@@ -333,13 +338,34 @@ async function loadForecast() {
     if (valueEl) valueEl.textContent = value;
     if (confidenceEl) confidenceEl.textContent = `${confidenceLevel} / ${data.status || 'unknown'}`;
     if (statusEl) statusEl.textContent = data.status || 'unknown';
-    if (intervalEl) intervalEl.textContent = intervalText;
+        if (intervalEl) intervalEl.textContent = intervalText;
   } catch (err) {
     console.error('Forecast load failed:', err);
     if (valueEl) valueEl.textContent = '--';
     if (confidenceEl) confidenceEl.textContent = 'service indisponible';
     if (statusEl) statusEl.textContent = 'insufficient_data';
     if (intervalEl) intervalEl.textContent = 'Intervalle: --';
+  }
+}
+
+async function runEtl() {
+  const etlBtn = document.getElementById('run-etl-btn');
+  if (etlBtn) { etlBtn.disabled = true; etlBtn.textContent = '🔄 Extraction...'; }
+  try {
+        const res = await fetch(`${AI_SERVICE_URL}/etl/run`, { method: 'POST' });
+    if (!res.ok) {
+      throw new Error(`Erreur ETL ${res.status}`);
+    }
+    const data = await res.json();
+    const meta = data.value || {};
+    showToast(`ETL terminé : ${meta.rows || 0} lignes, ${meta.product_count || 0} produits`, false);
+    // Invalidate cache and reload forecast
+    await loadForecast();
+  } catch (err) {
+    console.error('ETL run failed:', err);
+    showToast('Erreur ETL : le service IA est peut-être arrêté', true);
+  } finally {
+    if (etlBtn) { etlBtn.disabled = false; etlBtn.textContent = '🔄 Lancer ETL'; }
   }
 }
 
@@ -2421,3 +2447,4 @@ async function deleteCustomerOrder(id) {
     showToast(err.message, true);
   }
 }
+

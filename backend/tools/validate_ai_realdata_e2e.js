@@ -195,11 +195,11 @@ async function runTest() {
       throw new Error(`ETL run failed: ${etlResponse.status} - ${JSON.stringify(etlResponse.body)}`);
     }
 
-    console.log(`✓ ETL completed successfully`);
-    console.log(`  Rows exported: ${etlResponse.body.rows_exported}`);
-    console.log(`  Products included: ${etlResponse.body.products_count}`);
-    console.log(`  Period: ${etlResponse.body.period_start} to ${etlResponse.body.period_end}`);
-    console.log(`  Model version: ${etlResponse.body.model_version}`);
+        console.log(`✓ ETL completed successfully`);
+    console.log(`  Rows exported: ${etlResponse.body.value.rows}`);
+    console.log(`  Products included: ${etlResponse.body.value.product_count}`);
+    console.log(`  Period: ${etlResponse.body.value.period_start} to ${etlResponse.body.value.period_end}`);
+    console.log(`  Model version: ${etlResponse.body.value.model_version}`);
     console.log(`  Full response:`, JSON.stringify(etlResponse.body, null, 2));
 
     // 5. Get forecast AFTER ETL (should reflect new sale)
@@ -247,7 +247,7 @@ async function runTest() {
         saleId: saleId,
         productId: productId,
         etlRun: true,
-        rowsExported: etlResponse.body.rows_exported,
+                rowsExported: etlResponse.body.value.rows,
         forecastBeforeEtl: forecastBefore.body,
         forecastAfterEtl: forecastAfter.body,
         dataFlowVerified: valueAfter !== null

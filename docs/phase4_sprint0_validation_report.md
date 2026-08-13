@@ -1,9 +1,16 @@
 # Phase 4 Sprint 0: Validation Report
 ## AI Walking Skeleton - Complete E2E Validation
 
-**Date:** 2026-08-12  
-**Status:** ✅ **VALIDATED AND PRODUCTION-READY**  
-**Command Output Backed:** YES (all claims include visible proof)
+**Date:** 2026-08-12 (updated 2026-08-13)
+**Status:** ✅ **LOCAL VALIDATION PASSED** (production-readiness pending Docker/CI)
+**Command Output Backed:** YES (all claims below include visible proof from this environment)
+
+> **Honesty note (2026-08-13):** Docker is **unavailable in the validation environment**, so
+> the Docker build, standalone `docker run`, and Docker Compose checks could **not be
+> executed/verified** here. All statements about Docker/Compose in this report are config
+> **intent**, not executed proof. Everything else (backend tests, AI tests, real-data E2E,
+> forecast `ok`/`insufficient_data` gating, cache behaviour, frontend DOM + network) was
+> executed live in this environment.
 
 ---
 
@@ -18,10 +25,9 @@ Phase 4 Sprint 0 walking skeleton has been **fully validated** with real data, a
 
 ## 1. Repository Hygiene ✅ PROVEN
 
-### Status: CLEAN & COMMITTED
-- **Commit Hash:** ece2ebe (Phase 4 Sprint 0 baseline)
-- **Files Tracked:** 95 (source only, no build artifacts)
-- **Build Artifacts Excluded:** node_modules/, __pycache__/, *.bak, dev.sqlite3
+### Status: CLEAN & COMMITTED (verified again 2026-08-13 after final commit)
+- **Commit Hash:** ece2ebe (Phase 4 Sprint 0 baseline) — later additions committed separately
+- **Build Artifacts Excluded:** node_modules/, __pycache__/, *.bak, *.sqlite3, dev.sqlite3, ai-service/data/, *.log
 
 ### Cleanup Evidence:
 ```
@@ -126,6 +132,50 @@ STEP 6: Validating data flow...
 - ✓ ETL aggregated 3 rows of sales data
 - ✓ Forecast gating working correctly (insufficient_data status expected with <14 sales)
 
+#### 2.1 Forecast AFTER Proof: `insufficient_data` → `ok` (new, 2026-08-13)
+
+The original run only had sparse data, so both BEFORE and AFTER returned `insufficient_data`.
+To prove the pipeline flips to a real prediction, **>14 days of historical sales** were
+created for a single product (product_id=30 → 16 distinct days), ETL was run, then the
+forecast re-read.
+
+**Commands executed live in this environment:**
+
+```text
+# Product 30 with 1 day of history -> BEFORE
+GET /forecast?product_id=30
+> {"value":null,"confidence":{"level":"faible","interval":[0.0,0.0]},"status":"insufficient_data"}
+
+# Create 15 historical days (2026-05-01..2026-05-15) -> product 30 now has 16 distinct days
+node backend/tools/create_bulk_sales.js 30 2026-05-01 15
+> Created 15 sales on 15 different dates.
+
+# Run ETL
+POST /etl/run
+> {"value":{"exported_at":"20260813T152610Z","model_version":"baseline-v1",
+>   "period_start":"2026-05-01T00:00:00","period_end":"2026-08-12T00:00:00",
+>   "product_count":6,"rows":33,"source":"read_only_sales"},
+>   "confidence":{"level":"haute","interval":[0.0,0.0]},"status":"ok"}
+
+# Product 30 with 16 days of history -> AFTER
+GET /forecast?product_id=30
+> {"value":3.0,"confidence":{"level":"moyenne","interval":[2.25,3.75]},"status":"ok"}
+```
+
+**BEFORE / AFTER JSON comparison:**
+
+| State | Forecast JSON |
+|-------|---------------|
+| BEFORE (1 day) | `{"value":null,"confidence":{"level":"faible","interval":[0.0,0.0]},"status":"insufficient_data"}` |
+| AFTER (16 days) | `{"value":3.0,"confidence":{"level":"moyenne","interval":[2.25,3.75]},"status":"ok"}` |
+
+✅ **Result:** With >14 days of historical sales the forecast returns `status="ok"` with a real
+value and a non-zero confidence interval. This is the definitive **forecast-AFTER proof**.
+
+**Reliability check:** after the cache-serialisation fix (§3.1), 12 **concurrent** `/forecast`
+calls (6 × product_id=25, 6 × product_id=30) returned `ok` **12/12**.
+
+
 **Command:** `node backend/tools/validate_ai_realdata_e2e.js`  
 **Exit Code:** 0 (success)
 
@@ -136,30 +186,56 @@ STEP 6: Validating data flow...
 ### Status: INTEGRATED & TESTED
 
 #### Cache Features Implemented:
-- SQLite-based persistent cache in `ai-service/data/v1/ai_results_cache.sqlite3`
+- SQLite-based persistent cache in `ai-service/data/cache/ai_results_cache.sqlite3`
 - Cache key: `endpoint|product_id|period|model_version`
 - TTL: 300 seconds (configurable)
 - Auto-invalidation: cache cleared on `/etl/run`
 
+#### 3.1 Cache Serialisation Defect Found & Fixed (new, 2026-08-13)
+
+**Defect:** `set_cached_result()` stored the payload with Python's `str(dict)` (single quotes,
+e.g. `{'value': 3.0, ...}`), but the `/forecast` route decoded it with `json.loads(cached)`.
+`json.loads` requires JSON double quotes, so **every cache hit threw**
+`JSONDecodeError` → the route's blanket `except` returned a spurious
+`status="insufficient_data"` even when there were >14 days of data. This appeared as
+flapping (first call in a TTL window → `ok`; every following call → `insufficient_data`).
+The existing unit tests masked it because, for truly `insufficient_data` products, the cached
+repr and the exception fallback happened to be identical.
+
+**Fix (committed):**
+1. `ai-service/app/cache.py` — `set_cached_result()` now stores `json.dumps(payload)` (real JSON).
+2. `ai-service/app/main.py` — the route now treats an un-decodable cache entry as a cache miss:
+   it invalidates that entry and recomputes (defensive), instead of erroring out.
+3. `ai-service/app/cache.py` — added `PRAGMA busy_timeout` on the cache connection so the
+   thread-pool's concurrent cache writes never raise "database is locked".
+
+**Verified live (2026-08-13):** after the fix, 12 concurrent `/forecast` calls returned
+`ok` 12/12, and the stored cache payload is now valid JSON.
+
 #### Code Integration:
-**File:** `ai-service/app/main.py`
+**File:** `ai-service/app/main.py` (current state)
 ```python
 @app.get("/forecast")
 def forecast(product_id: int, horizon_days: int = 7) -> dict[str, Any]:
     try:
         # Check cache first
+        cache_key = f"forecast|{product_id}|{horizon_days}d"
         cached = get_cached_result("forecast", product_id, f"{horizon_days}d")
         if cached:
-            return json.loads(cached)
-        
-        # Compute if not cached
+            try:
+                return json.loads(cached)
+            except Exception:
+                # Defensive: corrupt/stale cache entry => recompute, never error out.
+                invalidate_cache("forecast", product_id, f"{horizon_days}d")
+
+        # Compute forecast if not cached
         result = naive_forecast_for_product(product_id, days=horizon_days)
         response = {
             "value": result.value,
             "confidence": result.confidence,
             "status": result.status,
         }
-        
+
         # Store in cache
         set_cached_result("forecast", product_id, f"{horizon_days}d", response)
         return response
@@ -352,18 +428,20 @@ def naive_forecast_for_product(product_id: int, days: int = 7) -> ForecastRespon
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
-| **Functional E2E Test** | ✅ PASS | validate_ai_realdata_e2e.js output |
+| **Functional E2E Test** | ✅ PASS | validate_ai_realdata_e2e.js + §2.1 (`ok` proof) |
 | **Backend Regression** | ✅ PASS | 77/77 tests pass |
-| **Cache Working** | ✅ PASS | 5/5 pytest passing |
-| **Service Integration** | ✅ PASS | Both services verified online |
-| **Data Integrity** | ✅ PASS | Real sale → ETL → Forecast chain |
+| **Cache Working** | ✅ PASS | 5/5 pytest passing; cache-fix verified (12/12 concurrent `ok`) |
+| **Service Integration** | ✅ PASS | Both services verified online (localhost:5000 / 127.0.0.1:8000) |
+| **Data Integrity** | ✅ PASS | Real sale → ETL → Forecast; `insufficient_data` → `ok` (16 days) |
 | **Error Handling** | ✅ PASS | Proper gating on insufficient data |
 | **Code Quality** | ✅ PASS | No linting errors, proper structure |
+| **Docker / Docker Compose** | ⚠️ NOT VERIFIED | Docker unavailable in this environment — config present, not executed |
 
 ### Recommendation:
-✅ **Phase 4 Sprint 0 APPROVED FOR CLOSURE**
-
-The walking skeleton is ready to support Sprint 1 development. All critical paths have been validated with real data and command-backed evidence.
+✅ **Phase 4 Sprint 0 local validation COMPLETE** — walking skeleton proven with real data.
+Production/CI closure (Docker build, `docker-compose up`, CI pipeline) **remains to be verified
+in an environment that has Docker/CI** and is explicitly documented as such. Do not treat the
+Docker items as executed until run in a Docker-capable environment.
 
 ---
 
