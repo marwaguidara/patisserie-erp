@@ -1,8 +1,15 @@
 const API_BASE = '/api';
-// AI Service URL: direct connection in local dev, proxied via nginx in Docker
-const AI_SERVICE_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  ? 'http://127.0.0.1:8000'
-  : '/ai';
+// The frontend ONLY ever talks to the AI service through the same-origin "/ai" path
+// (reverse-proxied). It never needs to know the AI service's real host/port — that
+// mapping is owned by the proxy: nginx in Docker, or an Express proxy in local dev
+// (see backend/src/app.js + frontend/nginx.conf).
+const AI_BASE_URL = '/ai';
+
+// Build a URL for any AI endpoint (forecast, etl/run, health,
+// production-recommendations, anomalies, segmentation, insights).
+function aiUrl(path) {
+  return `${AI_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+}
 
 let currentUser = null;
 let authToken = localStorage.getItem('bakery_jwt') || null;
@@ -19,11 +26,11 @@ let customerOrdersList = [];
 // Backend authorization remains the single source of truth; these rules
 // only control what the UI reveals to each role.
 const ROLE_TABS = {
-  ADMIN: ['catalog', 'ingredients', 'production', 'sales', 'employees', 'suppliers', 'categories', 'purchase-orders', 'customer-orders', 'forecast'],
+  ADMIN: ['catalog', 'ingredients', 'production', 'sales', 'employees', 'suppliers', 'categories', 'purchase-orders', 'customer-orders', 'forecast', 'ai-technical'],
   STOCK: ['ingredients', 'suppliers', 'purchase-orders', 'forecast'],
-  CASHIER: ['sales', 'customer-orders', 'forecast'],
+  CASHIER: ['sales', 'customer-orders'],
   PRODUCTION: ['catalog', 'ingredients', 'production', 'customer-orders', 'purchase-orders', 'forecast'],
-  EMPLOYEE: ['employees', 'forecast']
+  EMPLOYEE: ['employees']
 };
 
 // Static header action buttons -> roles allowed to see them.
@@ -42,6 +49,20 @@ const BUTTON_ROLES = {
 
 function getRole() {
   return currentUser ? currentUser.role : '';
+}
+
+// Centralized RBAC permission evaluation helper
+function can(permission) {
+  const role = getRole();
+  if (!role) return false;
+  switch (permission) {
+    case 'view_ai_forecast':
+      return ['ADMIN', 'PRODUCTION', 'STOCK'].includes(role);
+    case 'run_ai_etl':
+      return ['ADMIN'].includes(role);
+    default:
+      return false;
+  }
 }
 
 function hasAnyRole(...roles) {
@@ -71,7 +92,10 @@ function applyRoleVisibility() {
   const allContents = Array.from(document.querySelectorAll('.tab-content'));
 
   allTabs.forEach((tab) => {
-    const visible = !allowedTabs || allowedTabs.includes(tab.dataset.tab);
+    let visible = !allowedTabs || allowedTabs.includes(tab.dataset.tab);
+    if (tab.dataset.tab === 'forecast') {
+      visible = can('view_ai_forecast');
+    }
     tab.style.display = visible ? '' : 'none';
     if (!visible) {
       const content = document.getElementById('tab-' + tab.dataset.tab);
@@ -141,8 +165,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('sales-filter-end').addEventListener('change', loadSalesHistory);
   document.getElementById('sales-form').addEventListener('submit', handleSalesSubmit);
       document.getElementById('forecast-product-select').addEventListener('change', loadForecast);
-  document.getElementById('refresh-forecast-btn').addEventListener('click', loadForecast);
-  document.getElementById('run-etl-btn').addEventListener('click', runEtl);
+      document.getElementById('forecast-horizon-select').addEventListener('change', loadForecast);
+  document.getElementById('refresh-forecast-btn').addEventListener('click', refreshForecastData);
 
   // Search & Filter Events
   document.getElementById('search-products').addEventListener('input', renderProducts);
@@ -235,6 +259,7 @@ async function loadAllData() {
   await fetchIngredients();
   await fetchProducts();
   await fetchAlerts();
+  await loadAnomalies();
   await loadSalesData();
   if (authToken) {
     await loadAuthDependentData();
@@ -257,6 +282,10 @@ async function loadAuthDependentData() {
   } catch (err) {
     console.warn('Chargement des données authentifiées échoué:', err);
   }
+  // Once the user role is known, refresh the production-declaration recommendation
+  // for the currently selected product so the AI advice auto-displays when the
+  // user opens the Atelier de Fabrication screen.
+  loadProductionRecommendation();
 }
 
 function initSales() {
@@ -308,64 +337,170 @@ function populateForecastProductSelect() {
 }
 
 async function loadForecast() {
+  if (!can('view_ai_forecast')) {
+    renderForecastForbidden();
+    return;
+  }
+
   const select = document.getElementById('forecast-product-select');
+  const horizonSelect = document.getElementById('forecast-horizon-select');
   const productId = select ? select.value : '';
+  const horizon = horizonSelect ? horizonSelect.value : '7';
+
+  if (!productId) {
+    renderForecastUnavailable();
+    return;
+  }
+
+  const headers = {};
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
+  }
+
+  try {
+    const res = await fetch(aiUrl(`/forecast?product_id=${productId}&horizon_days=${horizon}`), { headers });
+    if (res.status === 403 || res.status === 401) {
+      renderForecastForbidden();
+      return;
+    }
+    if (!res.ok) {
+      // HTTP-level failure (proxy could not reach the AI service).
+      throw new Error(`Erreur AI service ${res.status}`);
+    }
+    const data = await res.json();
+    // Valid business response only: { value, confidence:{level,interval}, status }.
+    renderForecast(data);
+  } catch (err) {
+    // Network/proxy error (AI stopped, timeout, DNS, proxy). Distinct from any
+    // business state — never conflated with "historique insuffisant".
+    console.error('Forecast network error:', err);
+    renderForecastUnavailable();
+  }
+}
+
+// Business-friendly labels for the underlying technical model_version.
+// The raw identifier (ridge-v2 / baseline-v1) is kept only in data-model-version
+// (attribute) for debugging — it is not the primary visible text.
+const FORECAST_METHOD_LABELS = {
+  'ridge-v2': 'Méthode : analyse avancée',
+  'baseline-v1': 'Méthode : estimation simple'
+};
+
+// Refreshes the forecast. For ADMIN this also refreshes the underlying data
+// (ETL, which invalidates the forecast cache) before reloading; for the other
+// forecast roles (PRODUCTION/STOCK) it simply reloads the current forecast.
+async function refreshForecastData() {
+  if (can('run_ai_etl')) {
+    await runEtl();
+  } else {
+    await loadForecast();
+  }
+}
+
+// Sets the visible method label and keeps the raw model_version for debug.
+function renderForecastMethod(modelVersion) {
+  const modelEl = document.getElementById('forecast-model-version');
+  if (!modelEl) return;
+  const raw = modelVersion || '';
+  modelEl.dataset.modelVersion = raw;
+  modelEl.textContent = raw
+    ? (FORECAST_METHOD_LABELS[raw] || `Méthode : ${raw}`)
+    : 'Méthode : --';
+}
+
+// Displays when the forecast data was last refreshed on screen.
+function renderForecastUpdated() {
+  const updatedEl = document.getElementById('forecast-updated');
+  if (updatedEl) updatedEl.textContent = new Date().toLocaleString('fr-FR') + ' (heure locale)';
+}
+
+// Renders a VALID business response from the AI service.
+function renderForecast(data) {
   const valueEl = document.getElementById('forecast-value');
   const confidenceEl = document.getElementById('forecast-confidence');
   const statusEl = document.getElementById('forecast-status');
   const intervalEl = document.getElementById('forecast-interval');
+  const intervalInfoEl = document.getElementById('forecast-info-interval');
 
-  if (!productId) {
-    if (valueEl) valueEl.textContent = '--';
-    if (confidenceEl) confidenceEl.textContent = '--';
-    if (statusEl) statusEl.textContent = '--';
-    if (intervalEl) intervalEl.textContent = 'Intervalle: --';
-    return;
-  }
+  const isInsufficient = data.status === 'insufficient_data';
+  const value = isInsufficient
+    ? 'Historique insuffisant'
+    : (data.value == null ? '--' : `${Number(data.value).toFixed(2)} unités`);
+  const confidenceLevel = data.confidence && data.confidence.level ? data.confidence.level : 'faible';
+  const interval = data.confidence && Array.isArray(data.confidence.interval) ? data.confidence.interval : null;
+  const intervalText = interval
+    ? `Intervalle: ${interval[0]} à ${interval[1]} unités`
+    : 'Intervalle: --';
+  const businessInterval = interval
+    ? `Vous pouvez vous attendre à vendre entre ${interval[0]} et ${interval[1]} unités.`
+    : 'Vous pouvez vous attendre à vendre entre — et — unités.';
 
-  try {
-            const res = await fetch(`${AI_SERVICE_URL}/forecast?product_id=${productId}&horizon_days=7`);
-    if (!res.ok) {
-      throw new Error(`Erreur AI service ${res.status}`);
-    }
-    const data = await res.json();
-    const value = data.value == null ? 'Données insuffisantes' : `${Number(data.value).toFixed(2)} unités`;
-    const confidenceLevel = data.confidence && data.confidence.level ? data.confidence.level : 'faible';
-    const intervalText = data.confidence && Array.isArray(data.confidence.interval)
-      ? `Intervalle: ${data.confidence.interval[0]} à ${data.confidence.interval[1]} unités`
-      : 'Intervalle: non disponible';
+  if (valueEl) valueEl.textContent = value;
+  if (confidenceEl) confidenceEl.textContent = `${confidenceLevel} / ${data.status || 'unknown'}`;
+  if (statusEl) statusEl.textContent = data.status || 'unknown';
+  if (intervalEl) intervalEl.textContent = intervalText;
+  if (intervalInfoEl) intervalInfoEl.textContent = isInsufficient ? 'Non disponible — il manque encore des ventes passées sur ce produit.' : businessInterval;
+  renderForecastMethod(data.model_version);
+  renderForecastUpdated();
+}
 
-    if (valueEl) valueEl.textContent = value;
-    if (confidenceEl) confidenceEl.textContent = `${confidenceLevel} / ${data.status || 'unknown'}`;
-    if (statusEl) statusEl.textContent = data.status || 'unknown';
-        if (intervalEl) intervalEl.textContent = intervalText;
-  } catch (err) {
-    console.error('Forecast load failed:', err);
-    if (valueEl) valueEl.textContent = '--';
-    if (confidenceEl) confidenceEl.textContent = 'service indisponible';
-    if (statusEl) statusEl.textContent = 'insufficient_data';
-    if (intervalEl) intervalEl.textContent = 'Intervalle: --';
-  }
+function renderForecastForbidden() {
+  const valueEl = document.getElementById('forecast-value');
+  const confidenceEl = document.getElementById('forecast-confidence');
+  const statusEl = document.getElementById('forecast-status');
+  const intervalEl = document.getElementById('forecast-interval');
+  if (valueEl) valueEl.textContent = 'Accès Refusé';
+  if (confidenceEl) confidenceEl.textContent = '403 Forbidden';
+  if (statusEl) statusEl.textContent = 'Accès non autorisé pour votre rôle';
+  if (intervalEl) intervalEl.textContent = 'Intervalle: --';
+  renderForecastMethod('');
+}
+
+// Network-level failure: AI service unreachable through the proxy.
+function renderForecastUnavailable() {
+  const valueEl = document.getElementById('forecast-value');
+  const confidenceEl = document.getElementById('forecast-confidence');
+  const statusEl = document.getElementById('forecast-status');
+  const intervalEl = document.getElementById('forecast-interval');
+  if (valueEl) valueEl.textContent = '--';
+  if (confidenceEl) confidenceEl.textContent = '--';
+  if (statusEl) statusEl.textContent = 'Service IA injoignable';
+  if (intervalEl) intervalEl.textContent = 'Intervalle: --';
+  renderForecastMethod('');
 }
 
 async function runEtl() {
-  const etlBtn = document.getElementById('run-etl-btn');
-  if (etlBtn) { etlBtn.disabled = true; etlBtn.textContent = '🔄 Extraction...'; }
+  if (!can('run_ai_etl')) {
+    showToast('Accès refusé : votre rôle ne permet pas d\'exécuter l\'ETL.', true);
+    return;
+  }
+
+  const etlBtn = document.getElementById('refresh-forecast-btn');
+  if (etlBtn) { etlBtn.disabled = true; etlBtn.textContent = '🔄 Mise à jour des données...'; }
+
+  const headers = {};
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
+  }
+
   try {
-        const res = await fetch(`${AI_SERVICE_URL}/etl/run`, { method: 'POST' });
+    const res = await fetch(aiUrl('/etl/run'), { method: 'POST', headers });
     if (!res.ok) {
+      if (res.status === 403 || res.status === 401) {
+        throw new Error('Accès refusé par le serveur (403)');
+      }
       throw new Error(`Erreur ETL ${res.status}`);
     }
     const data = await res.json();
     const meta = data.value || {};
-    showToast(`ETL terminé : ${meta.rows || 0} lignes, ${meta.product_count || 0} produits`, false);
+    showToast(`Actualisation : ${meta.rows || 0} lignes, ${meta.product_count || 0} produits`, false);
     // Invalidate cache and reload forecast
     await loadForecast();
   } catch (err) {
-    console.error('ETL run failed:', err);
-    showToast('Erreur ETL : le service IA est peut-être arrêté', true);
+    console.error('ETL run network error:', err);
+    showToast(err.message || 'Erreur ETL : service IA injoignable', true);
   } finally {
-    if (etlBtn) { etlBtn.disabled = false; etlBtn.textContent = '🔄 Lancer ETL'; }
+    if (etlBtn) { etlBtn.disabled = false; etlBtn.textContent = '🔄 Actualiser les données'; }
   }
 }
 
@@ -625,17 +760,21 @@ function renderSalesHistoryPlaceholder() {
   tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--text-secondary);">Connectez-vous pour afficher l\'historique des ventes.</td></tr>';
 }
 
-// Tab navigation
+// Tab navigation — shared implementation, also reused by the anomaly
+// "open concerned screen" links (no second navigation system is created).
+function switchToTab(tabName) {
+  const tab = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+  if (!tab) return;
+  document.querySelectorAll('.tab-btn').forEach((t) => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
+  tab.classList.add('active');
+  const target = document.getElementById(`tab-${tabName}`);
+  if (target) target.classList.add('active');
+}
+
 function initTabs() {
-  const tabs = document.querySelectorAll('.tab-btn');
-  tabs.forEach((tab) => {
-    tab.addEventListener('click', () => {
-      tabs.forEach((t) => t.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
-      tab.classList.add('active');
-      const targetId = `tab-${tab.dataset.tab}`;
-      document.getElementById(targetId).classList.add('active');
-    });
+  document.querySelectorAll('.tab-btn').forEach((tab) => {
+    tab.addEventListener('click', () => switchToTab(tab.dataset.tab));
   });
 }
 
@@ -669,6 +808,7 @@ function initAuth() {
       showToast(`Bienvenue, ${currentUser.name} (${currentUser.role})`);
       await loadAuthDependentData();
       loadSalesData();
+      loadAnomalies();
     } catch (err) {
       showToast(err.message, true);
     }
@@ -684,6 +824,7 @@ function initAuth() {
           updateUserUI();
           loadAuthDependentData();
           loadSalesData();
+          loadAnomalies();
         }
       })
       .catch(() => localStorage.removeItem('bakery_jwt'));
@@ -710,27 +851,169 @@ function logout() {
   `;
   showToast('Déconnecté.');
   applyRoleVisibility();
+  loadAnomalies();
 }
 
-// Fetch Alerts
+// Dashboard alerts visibility: the header badge is shown when at least one
+// alert pill is visible (low stock / expiry / AI anomalies).
+function updateAlertsBadgeVisibility() {
+  const badge = document.getElementById('alerts-summary-badge');
+  if (!badge) return;
+  const anyVisible = Array.from(badge.querySelectorAll('.alert-pill'))
+    .some((pill) => !pill.classList.contains('hidden'));
+  badge.classList.toggle('hidden', !anyVisible);
+}
+
+// Fetch Alerts (existing dashboard alert panel — also reused by the anomalies)
 async function fetchAlerts() {
   try {
     const alerts = await safeFetchJson(`${API_BASE}/stocks/alerts`);
 
-    const summaryBadge = document.getElementById('alerts-summary-badge');
     const badgeLow = document.getElementById('badge-low-stock');
     const badgeExp = document.getElementById('badge-expiring');
 
-    if (alerts.low_stock_count > 0 || alerts.expiring_soon_count > 0) {
-      summaryBadge.classList.remove('hidden');
-      badgeLow.textContent = `⚠️ ${alerts.low_stock_count} Stock Faible`;
-      badgeExp.textContent = `⏳ ${alerts.expiring_soon_count} Péremption`;
-    } else {
-      summaryBadge.classList.add('hidden');
-    }
+    badgeLow.textContent = `⚠️ ${alerts.low_stock_count} Stock Faible`;
+    badgeExp.textContent = `⏳ ${alerts.expiring_soon_count} Péremption`;
+    badgeLow.classList.toggle('hidden', (alerts.low_stock_count || 0) <= 0);
+    badgeExp.classList.toggle('hidden', (alerts.expiring_soon_count || 0) <= 0);
+
+    updateAlertsBadgeVisibility();
   } catch (err) {
     console.error('Error fetching alerts:', err);
   }
+}
+
+// ===== AI anomalies -> EXISTING dashboard notification system (Sprint 3, Prompt 3) =====
+// Reuses WITHOUT duplicating:
+//   - the header #alerts-summary-badge / .alert-pill component (dashboard alerts panel)
+//   - the showToast() helper already used by the Commandes module for notifications
+//   - the switchToTab() navigation (same mechanism as the nav tabs)
+//   - the existing same-origin /ai proxy fetch pattern (aiUrl + Authorization header)
+
+const ANOMALY_TYPE_LABELS = {
+  sales_drop: 'Baisse de ventes',
+  stock_discrepancy: 'Écart de stock'
+};
+
+const ANOMALY_SEVERITY_LABELS = {
+  haute: '🔴 haute',
+  moyenne: '🟠 moyenne',
+  faible: '🟡 faible'
+};
+
+function anomalyProductName(productId) {
+  const product = productsList.find((p) => Number(p.id) === Number(productId));
+  return product ? product.name : `Produit #${productId}`;
+}
+
+// Direct link to the concerned screen (product / stock), role-aware.
+function openConcernedScreen(type, productId) {
+  const role = getRole();
+  let targetTab = 'ingredients'; // stock screen
+  if (type === 'sales_drop') {
+    // Product screen: catalog when the role can open it, otherwise the AI
+    // forecast screen (product-centric, accessible to every role allowed to
+    // view anomalies: ADMIN and STOCK both have the forecast tab).
+    targetTab = role && ROLE_TABS[role] && ROLE_TABS[role].includes('catalog') ? 'catalog' : 'forecast';
+  }
+  switchToTab(targetTab);
+
+  if (targetTab === 'forecast' && productId) {
+    const forecastSelect = document.getElementById('forecast-product-select');
+    if (forecastSelect) {
+      forecastSelect.value = String(productId);
+      loadForecast();
+    }
+  } else if (targetTab === 'catalog' && productId) {
+    const searchBox = document.getElementById('search-products');
+    if (searchBox) {
+      searchBox.value = anomalyProductName(productId);
+      renderProducts();
+    }
+  }
+  // Reuse the Commandes toast notification helper.
+  showToast(`Anomalie ${ANOMALY_TYPE_LABELS[type] || type} — ${anomalyProductName(productId)}.`, false);
+}
+
+// Loads the active AI anomalies via the existing same-origin /ai proxy.
+async function loadAnomalies() {
+  const badge = document.getElementById('badge-anomalies');
+  const panel = document.getElementById('anomalies-panel');
+  if (!badge || !panel) return;
+
+  // Mirror the backend RBAC (ADMIN / STOCK only). The backend stays the single
+  // source of truth (401/403 are still enforced server-side).
+  if (!authToken || !hasAnyRole('ADMIN', 'STOCK')) {
+    badge.classList.add('hidden');
+    panel.classList.add('hidden');
+    updateAlertsBadgeVisibility();
+    return;
+  }
+
+  const headers = {};
+  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+  try {
+    const res = await fetch(aiUrl('/anomalies'), { headers });
+    if (res.status === 401 || res.status === 403) {
+      badge.classList.add('hidden');
+      panel.classList.add('hidden');
+      updateAlertsBadgeVisibility();
+      return;
+    }
+    if (!res.ok) throw new Error(`Erreur anomalies ${res.status}`);
+
+    const data = await res.json();
+    const anomalies = Array.isArray(data.anomalies) ? data.anomalies : [];
+    renderAnomalies(badge, panel, anomalies);
+  } catch (err) {
+    console.error('Erreur chargement anomalies:', err);
+    badge.classList.add('hidden');
+    panel.classList.add('hidden');
+    updateAlertsBadgeVisibility();
+  }
+}
+
+function renderAnomalies(badge, panel, anomalies) {
+  if (!anomalies.length) {
+    badge.classList.add('hidden');
+    panel.classList.add('hidden');
+    updateAlertsBadgeVisibility();
+    return;
+  }
+
+  // Reuse the existing dashboard alert-pill component.
+  badge.textContent = `⚠️ ${anomalies.length} Anomalie${anomalies.length > 1 ? 's' : ''} IA`;
+  badge.classList.remove('hidden');
+  updateAlertsBadgeVisibility();
+
+  panel.innerHTML = `
+    <div class="anomalies-panel-header">
+      <strong>⚠️ Anomalies actives détectées par l'IA</strong>
+      <span class="text-muted">${anomalies.length} signalement(s)</span>
+    </div>
+    <div class="anomalies-list">
+      ${anomalies.map((a) => {
+        const name = anomalyProductName(a.product_id);
+        const typeLabel = ANOMALY_TYPE_LABELS[a.type] || a.type;
+        const sevLabel = ANOMALY_SEVERITY_LABELS[a.severity] || a.severity;
+        const detail = a.confidence && a.confidence.detail ? a.confidence.detail : '';
+        return `
+          <div class="anomaly-item">
+            <div>
+              <strong>${name}</strong>
+              <span class="text-muted"> · ${typeLabel} · ${sevLabel}</span>
+              <p class="text-muted" style="margin-top:2px;">${detail}</p>
+            </div>
+            <a href="#" class="btn btn-secondary btn-sm"
+               onclick="openConcernedScreen('${a.type}', ${a.product_id}); return false;">Voir l'écran →</a>
+          </div>`;
+      }).join('')}
+    </div>`;
+  panel.classList.remove('hidden');
+
+  // Reuse the Commandes toast notification helper.
+  showToast(`⚠️ ${anomalies.length} anomalie(s) active(s) détectée(s) par l'IA.`, false);
 }
 
 async function fetchAvailableUsers() {
@@ -1417,6 +1700,8 @@ function updateRecipePreview() {
   const previewBox = document.getElementById('recipe-preview-box');
   const qty = parseInt(document.getElementById('prod-quantity').value, 10) || 1;
 
+  loadProductionRecommendation();
+
   if (!productId) {
     previewBox.innerHTML = '<p class="text-muted">Aucun produit sélectionné.</p>';
     return;
@@ -1442,6 +1727,98 @@ function updateRecipePreview() {
   });
   html += '</ul>';
   previewBox.innerHTML = html;
+}
+
+// ---- Production recommendation integration (Phase 4 / AI) ----
+
+function productionConfidenceLabel(level) {
+  return { haute: 'élevée', moyenne: 'moyenne', faible: 'faible' }[level] || level || '—';
+}
+
+// Applies the recommended quantity to the batch field (one-click, no re-entry).
+function applyProductionRecommendation(qty) {
+  const qtyInput = document.getElementById('prod-quantity');
+  if (qtyInput) qtyInput.value = Math.max(1, Math.round(qty));
+  showToast('Quantité recommandée appliquée. Vérifiez puis lancez la fabrication.');
+}
+
+// Renders the recommendation inside the production-declaration form.
+function renderProductionRecommendation(box, data) {
+  if (data.status === 'insufficient_data') {
+    box.innerHTML = `
+      <div style="background: rgba(245,158,11,0.12); border:1px solid var(--accent-orange); padding:12px; border-radius:10px;">
+        <strong>⚠️ Historique insuffisant</strong>
+        <p style="margin-top:6px;">Pas encore assez de ventes passées sur ce produit pour proposer une recommandation fiable.
+        Décision manuelle requise : saisissez la quantité du lot ci-dessus.</p>
+      </div>`;
+    return;
+  }
+  if (data.status === 'manual_review_required') {
+    box.innerHTML = `
+      <div style="background: rgba(245,158,11,0.12); border:1px solid var(--accent-orange); padding:12px; border-radius:10px;">
+        <strong>⚠️ Recommandation indisponible</strong>
+        <p style="margin-top:6px;">Certaines données sont incomplètes (ex. stock non renseigné).
+        Décision manuelle requise : saisissez la quantité vous-même.</p>
+      </div>`;
+    return;
+  }
+
+  const rec = Number(data.recommended_quantity);
+  const level = productionConfidenceLabel(data.confidence && data.confidence.level);
+  const interval = data.confidence && Array.isArray(data.confidence.interval) ? data.confidence.interval : null;
+  const intervalTxt = interval ? ` — fourchette de prévision ${interval[0]} à ${interval[1]} unités` : '';
+  const recDisplay = Number.isFinite(rec) ? `${rec} unités` : '—';
+
+  let actionHtml = '';
+  if (Number.isFinite(rec) && rec >= 1) {
+    actionHtml = `<button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="applyProductionRecommendation(${rec})">⚡ Utiliser cette quantité</button>`;
+  } else {
+    actionHtml = `<p style="margin-top:6px; font-size:0.85rem; color:var(--text-secondary);">
+      Le stock actuel couvre déjà la demande — production supplémentaire non nécessaire.
+      Vous pouvez saisir une quantité manuelle dans le champ ci-dessus.</p>`;
+  }
+
+  box.innerHTML = `
+    <div style="background: rgba(16,185,129,0.12); border:1px solid var(--accent-green); padding:12px; border-radius:10px;">
+      <strong>💡 Quantité recommandée : ${recDisplay}</strong>
+      <p style="margin-top:4px;">Confiance : ${level}${intervalTxt}</p>
+      ${actionHtml}
+    </div>`;
+}
+
+// Fetches the production recommendation for the selected product (role-gated).
+async function loadProductionRecommendation() {
+  const box = document.getElementById('prod-recommendation-box');
+  if (!box) return;
+
+  const productId = document.getElementById('prod-product-select').value;
+  // Role protection via the existing helper (ADMIN / PRODUCTION only).
+  if (!hasAnyRole('ADMIN', 'PRODUCTION')) {
+    box.innerHTML = '<p class="text-muted">Recommandation réservée aux rôles ADMIN / Production.</p>';
+    return;
+  }
+  if (!productId) {
+    box.innerHTML = '<p class="text-muted">Sélectionnez un produit pour voir la quantité recommandée.</p>';
+    return;
+  }
+
+  box.innerHTML = '<p class="text-muted">Chargement de la recommandation…</p>';
+  const headers = {};
+  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+  try {
+    const res = await fetch(aiUrl(`/production-recommendations?product_id=${productId}&horizon_days=7`), { headers });
+    if (res.status === 401 || res.status === 403) {
+      box.innerHTML = '<p class="text-muted">Recommandation non disponible (accès refusé pour votre rôle).</p>';
+      return;
+    }
+    if (!res.ok) throw new Error(`Erreur ${res.status}`);
+    const data = await res.json();
+    renderProductionRecommendation(box, data);
+  } catch (err) {
+    console.error('Production recommendation error:', err);
+    box.innerHTML = '<p class="text-muted">Recommandation momentanément indisponible — la saisie manuelle reste possible.</p>';
+  }
 }
 
 // Fetch Ingredients

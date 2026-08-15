@@ -1,0 +1,28 @@
+{
+  "model_version": "ridge-v2",
+  "trained_at": "20260814T104913Z",
+  "model_type": "Ridge Regression (StandardScaler + Ridge L2)",
+  "hyperparameters": {
+    "alpha": 1.0,
+    "random_state": 42
+  },
+  "metrics_on_training_set": {
+    "mae": 1.4891,
+    "rmse": 2.1343,
+    "r2_score": 0.5306
+  },
+  "intercept": 3.4848,
+  "feature_coefficients": {
+    "day_of_week": 0.136,
+    "month": 1.7249,
+    "is_weekend": -0.0718,
+    "is_holiday": 0.4245,
+    "lag_1": 1.5721,
+    "lag_7": -0.7102,
+    "rolling_mean_7": -2.1474,
+    "rolling_mean_14": 0.0217,
+    "rolling_mean_30": 0.9924
+  },
+  "training_sample_count": 33,
+  "volumetry_justification": "Real dataset volume: 33 total rows across 2 active products (16-17 sales days per active product over ~3.5 months). Given the low density and small sample size, Ridge Regression (L2-regularized linear model) was selected over complex models (Prophet, SARIMA, RandomForest) to prevent severe overfitting and provide robust, interpretable predictions on temporal and lag features."
+}

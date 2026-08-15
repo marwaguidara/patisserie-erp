@@ -43,6 +43,14 @@ def fetch_products():
     return _run_query(query)
 
 
+def fetch_current_stocks() -> dict[int, float]:
+    """Consume the current finished-good stock maintained by the backend StockService
+    (Phase 3). One batch query across all products — never recomputed from raw movements.
+    Returns {product_id: stock_quantity}."""
+    rows = _run_query("SELECT id AS product_id, stock_quantity FROM products")
+    return {int(r["product_id"]): float(r["stock_quantity"] or 0.0) for r in rows}
+
+
 def fetch_stock_snapshot():
     query = "SELECT id, name, current_stock, minimum_stock FROM ingredients ORDER BY id ASC"
     return _run_query(query)

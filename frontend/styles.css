@@ -104,6 +104,55 @@ body {
   border: 1px solid rgba(245, 158, 11, 0.4);
 }
 
+.alert-pill.anomaly {
+  background: rgba(139, 92, 246, 0.2);
+  color: var(--accent-purple);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+}
+
+.alert-pill.hidden {
+  display: none;
+}
+
+/* Panel des anomalies actives (branche sur le systeme d'alertes existant) */
+.anomalies-panel {
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.anomalies-panel.hidden {
+  display: none;
+}
+
+.anomalies-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.anomalies-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.anomaly-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
 .status-indicator {
   display: flex;
   align-items: center;

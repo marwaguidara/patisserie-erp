@@ -10,10 +10,6 @@ CACHE_DB.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _connect() -> sqlite3.Connection:
-    # FastAPI runs sync handlers in a thread pool, so multiple /forecast calls
-    # can write to the SQLite cache concurrently. Without a busy timeout these
-    # concurrent writers intermittently raise "database is locked", which the
-    # route's blanket except turns into a spurious status="insufficient_data".
     conn = sqlite3.connect(CACHE_DB, timeout=30.0)
     conn.execute("PRAGMA busy_timeout=30000")
     conn.execute(
@@ -38,8 +34,8 @@ def cache_key(endpoint: str, product_id: int, period: str, model_version: str = 
     return f"{endpoint}|{product_id}|{period}|{model_version}"
 
 
-def get_cached_result(endpoint: str, product_id: int, period: str, ttl_seconds: int = DEFAULT_TTL_SECONDS):
-    key = cache_key(endpoint, product_id, period)
+def get_cached_result(endpoint: str, product_id: int, period: str, model_version: str = MODEL_VERSION, ttl_seconds: int = DEFAULT_TTL_SECONDS):
+    key = cache_key(endpoint, product_id, period, model_version)
     conn = _connect()
     row = conn.execute(
         "SELECT payload, expires_at FROM ai_results_cache WHERE key = ?",
@@ -55,15 +51,15 @@ def get_cached_result(endpoint: str, product_id: int, period: str, ttl_seconds: 
     return payload
 
 
-def set_cached_result(endpoint: str, product_id: int, period: str, payload: dict, ttl_seconds: int = DEFAULT_TTL_SECONDS):
-    key = cache_key(endpoint, product_id, period)
+def set_cached_result(endpoint: str, product_id: int, period: str, payload: dict, model_version: str = MODEL_VERSION, ttl_seconds: int = DEFAULT_TTL_SECONDS):
+    key = cache_key(endpoint, product_id, period, model_version)
     created_at = datetime.utcnow().isoformat()
     expires_at = (datetime.utcnow() + timedelta(seconds=ttl_seconds)).isoformat()
     conn = _connect()
     conn.execute(
         "INSERT INTO ai_results_cache (key, endpoint, product_id, period, model_version, payload, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(key) DO UPDATE SET payload = excluded.payload, created_at = excluded.created_at, expires_at = excluded.expires_at",
-        (key, endpoint, product_id, period, MODEL_VERSION, json.dumps(payload), created_at, expires_at),
+        (key, endpoint, product_id, period, model_version, json.dumps(payload), created_at, expires_at),
     )
     conn.commit()
     conn.close()

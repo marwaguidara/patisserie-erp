@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db/connection');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const StockService = require('../services/stockService');
+const { invalidateForecastCache } = require('../services/aiCacheService');
 
 const router = express.Router();
 
@@ -243,6 +244,10 @@ router.post('/:id/produce', requireAuth, requireRole(['ADMIN', 'PRODUCTION']), a
     }
 
     const result = await StockService.produceProduct(productId, quantity, req.user ? req.user.id : null);
+    // Production changed the finished-good stock -> invalidate AI caches for this product (best-effort).
+    invalidateForecastCache([productId]).catch((err) => {
+      console.warn('[ai-cache] post-production invalidation error:', err.message);
+    });
     res.json({
       message: `Successfully produced ${quantity} units. Ingredient stock updated.`,
       result

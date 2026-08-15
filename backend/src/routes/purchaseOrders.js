@@ -1,6 +1,7 @@
 const express = require('express');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const OrderService = require('../services/orderService');
+const { invalidateAllAiCaches } = require('../services/aiCacheService');
 
 const router = express.Router();
 
@@ -53,6 +54,12 @@ router.put('/:id/status', requireAuth, requireRole(['ADMIN', 'STOCK']), async (r
     const id = parseInt(req.params.id, 10);
     const { status } = req.body;
     const order = await OrderService.updatePurchaseOrderStatus(id, status, req.user.id);
+    // A received supplier order refreshes raw-material stock -> invalidate all AI caches (best-effort).
+    if (status === 'RECEIVED') {
+      invalidateAllAiCaches().catch((err) => {
+        console.warn('[ai-cache] post-receipt invalidation error:', err.message);
+      });
+    }
     res.json(order);
   } catch (err) {
     if (err.message.includes('invalide') || err.message.includes('introuvable') || err.message.includes('Impossible') || err.message.includes('Seule')) {

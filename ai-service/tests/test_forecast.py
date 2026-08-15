@@ -23,3 +23,5 @@ def test_forecast_contract():
     assert 'level' in payload['confidence']
     assert 'interval' in payload['confidence']
     assert payload['status'] in {'ok', 'insufficient_data'}
+    assert 'model_version' in payload
+    assert payload['model_version'] in {'ridge-v2', 'baseline-v1'}

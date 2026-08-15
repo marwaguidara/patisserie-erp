@@ -24,6 +24,7 @@
         <div id="alerts-summary-badge" class="alerts-summary hidden">
           <span class="alert-pill low-stock" id="badge-low-stock">0 Stock Faible</span>
           <span class="alert-pill expiring" id="badge-expiring">0 Péremption</span>
+          <span class="alert-pill anomaly hidden" id="badge-anomalies">0 Anomalie(s) IA</span>
         </div>
         <div class="status-indicator">
           <span class="dot active"></span>
@@ -47,11 +48,15 @@
       <button class="tab-btn" data-tab="purchase-orders">🚚 Commandes Fournisseurs</button>
       <button class="tab-btn" data-tab="customer-orders">🎂 Commandes Clients</button>
       <button class="tab-btn" data-tab="forecast">🔮 Prévision IA</button>
+      <button class="tab-btn" data-tab="ai-technical">⚙️ Informations techniques</button>
     </nav>
 
     <!-- Main Content -->
     <main class="main-content">
       <div id="toast" class="toast hidden"></div>
+
+      <!-- Anomalies IA actives (reutilise le composant d'alertes existant du dashboard) -->
+      <div id="anomalies-panel" class="anomalies-panel hidden"></div>
 
       <!-- Tab 1: Product Catalog -->
       <section id="tab-catalog" class="tab-content active">
@@ -140,6 +145,12 @@
               <div class="form-group">
                 <label for="prod-quantity">Quantité du lot (unités)</label>
                 <input type="number" id="prod-quantity" class="form-control" value="10" min="1" required>
+              </div>
+              <div class="form-group">
+                <label>💡 Recommandation IA</label>
+                <div id="prod-recommendation-box" style="margin-top:4px;">
+                  <p class="text-muted">Sélectionnez un produit pour voir la quantité recommandée.</p>
+                </div>
               </div>
               <button type="submit" class="btn btn-accent btn-large">⚡ Fabriquer et Déduire le Stock</button>
             </form>
@@ -266,11 +277,10 @@
         <div class="section-header">
           <div>
             <h2>🔮 Prévision IA</h2>
-            <p class="section-desc">Prédictions de demande basées sur l'historique de ventes. Exécutez l'ETL pour rafraîchir les données, puis consultez la prévision avec son indicateur de confiance.</p>
+            <p class="section-desc">Estimez la demande future de vos produits à partir de l'historique de ventes, avec un indicateur de confiance pour vous aider dans vos décisions.</p>
           </div>
           <div class="action-buttons">
-            <button class="btn btn-secondary" id="run-etl-btn">🔄 Lancer ETL</button>
-            <button class="btn btn-secondary" id="refresh-forecast-btn">Actualiser la prévision</button>
+            <button class="btn btn-secondary" id="refresh-forecast-btn">🔄 Actualiser les données</button>
           </div>
         </div>
 
@@ -283,6 +293,11 @@
           </div>
           <div class="filter-bar">
             <select id="forecast-product-select" class="form-control filter-select"></select>
+            <select id="forecast-horizon-select" class="form-control filter-select">
+              <option value="7" selected>Horizon : 7 jours</option>
+              <option value="14">14 jours</option>
+              <option value="30">30 jours</option>
+            </select>
           </div>
 
           <div id="forecast-panel" class="card" style="background:#0b1220; border:1px solid #1e293b; color:white; padding:18px; border-radius:12px;">
@@ -301,26 +316,53 @@
               </div>
             </div>
             <div id="forecast-interval" style="margin-top:12px; opacity:.8;">Intervalle: --</div>
+            <div id="forecast-model-version" data-model-version="" style="margin-top:6px; opacity:.6; font-size:.85rem;">Méthode : --</div>
           </div>
         </div>
 
         <div class="card">
           <div class="section-header">
-            <h3>📋 Documentation API IA</h3>
+            <div>
+              <h3>❓ Informations sur la prévision</h3>
+            </div>
           </div>
           <div style="padding: 12px;">
-            <p style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:8px;">Le service d'IA est accessible localement à l'adresse suivante :</p>
-            <code style="background:rgba(0,0,0,0.3); padding:4px 8px; border-radius:4px; font-size:0.85rem;">http://127.0.0.1:8000/forecast?product_id=&lt;id&gt;</code>
-            <p style="font-size:0.8rem; color:var(--text-secondary); margin-top:12px;">Endpoints disponibles :</p>
-            <ul style="list-style:none; padding:0; margin-top:4px; font-size:0.85rem;">
-              <li style="margin-bottom:4px;">• <code>GET /health</code> — état du service</li>
-              <li style="margin-bottom:4px;">• <code>GET /forecast?product_id=X</code> — prévision avec confiance et statut</li>
-              <li style="margin-bottom:4px;">• <code>POST /etl/run</code> — extraction des historiques de vente</li>
+            <p style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:8px;">Cette section vous aide à lire la prévision affichée.</p>
+            <ul style="list-style:none; padding:0; margin-top:4px; font-size:0.9rem;">
+              <li style="margin-bottom:8px;"><strong>Intervalle de confiance :</strong> <span id="forecast-info-interval">Vous pouvez vous attendre à vendre entre — et — unités.</span></li>
+              <li style="margin-bottom:8px;"><strong>Historique insuffisant :</strong> <span id="forecast-info-insufficient">Si le statut indique « historique insuffisant », c'est qu'il n'y a pas encore assez de ventes passées sur ce produit pour estimer une prévision fiable.</span></li>
+              <li><strong>Dernière actualisation des données :</strong> <span id="forecast-updated">—</span></li>
             </ul>
           </div>
         </div>
       </section>
 
+<!-- Tab: Informations techniques (réservé ADMIN) -->
+      <section id="tab-ai-technical" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2>⚙️ Informations techniques</h2>
+            <p class="section-desc">Contenu technique réservé à l'administration. La prévision en elle-même reste accessible à tous les profils métier via l'onglet « Prévision IA ».</p>
+          </div>
+        </div>
+        <div class="card">
+          <div class="section-header">
+            <div><h3>📋 Documentation API IA</h3></div>
+          </div>
+          <div style="padding: 12px;">
+            <p style="font-size:0.9rem; color:var(--text-secondary); margin-bottom:8px;">Le service d'IA est accessible via le proxy inverse (même origine) :</p>
+            <code style="background:rgba(0,0,0,0.3); padding:4px 8px; border-radius:4px; font-size:0.85rem;">/ai/forecast?product_id=&lt;id&gt;</code>
+            <p style="font-size:0.8rem; color:var(--text-secondary); margin-top:12px;">Endpoints disponibles :</p>
+            <ul style="list-style:none; padding:0; margin-top:4px; font-size:0.85rem;">
+              <li style="margin-bottom:4px;">• <code>GET /ai/health</code> — état du service</li>
+              <li style="margin-bottom:4px;">• <code>GET /ai/forecast?product_id=X</code> — prévision avec confiance et statut</li>
+              <li style="margin-bottom:4px;">• <code>POST /ai/etl/run</code> — extraction des historiques de vente</li>
+              <li style="margin-bottom:4px;">• <code>GET /ai/production-recommendations</code>, <code>/ai/anomalies</code>, <code>/ai/segmentation</code>, <code>/ai/insights</code> — futurs (501)</li>
+            </ul>
+            <p style="font-size:0.8rem; color:var(--text-secondary); margin-top:8px;">L'URL réelle du service IA est masquée derrière le proxy ; elle n'est jamais exposée au frontend.</p>
+          </div>
+        </div>
+      </section>
       <!-- Tab 5: Employees -->
       <section id="tab-employees" class="tab-content">
         <div class="section-header">

@@ -1,5 +1,6 @@
 const db = require('../db/connection');
 const StockService = require('./stockService');
+const { invalidateForecastCache } = require('./aiCacheService');
 
 class SalesService {
   static async calculateProductCost(productId, executor = db) {
@@ -120,7 +121,14 @@ class SalesService {
         provider: paymentMethod === 'CARD' ? 'CardTerminal' : 'Cash'
       });
 
-      return await SalesService.getSaleById(saleId, trx);
+      const sale = await SalesService.getSaleById(saleId, trx);
+
+      // Invalidate AI forecast cache for sold products (best-effort, outside transaction)
+      invalidateForecastCache(uniqueProductIds).catch((err) => {
+        console.warn('[ai-cache] post-sale invalidation error:', err.message);
+      });
+
+      return sale;
     });
   }
 

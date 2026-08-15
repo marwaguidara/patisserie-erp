@@ -160,4 +160,18 @@ describe('Sprint 1 - E2E Scenario (Produits + Stocks)', () => {
     expect(found).toBeDefined();
     expect(found.is_low_stock).toBe(true);
   });
+
+  test('Étape 9: Produit sans ventes -> forecast insufficient_data avec model_version', async () => {
+    const res = await request(app)
+      .get(`/ai/forecast?product_id=${productId}&horizon_days=7`)
+      .set('Authorization', `Bearer ${authToken}`);
+
+    if (res.statusCode === 200) {
+      expect(res.body).toHaveProperty('status', 'insufficient_data');
+      expect(res.body).toHaveProperty('value', null);
+      expect(res.body).toHaveProperty('model_version', 'baseline-v1');
+      expect(res.body.confidence).toHaveProperty('interval', [0.0, 0.0]);
+      expect(res.body.confidence).toHaveProperty('level', 'faible');
+    }
+  });
 });

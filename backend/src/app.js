@@ -46,7 +46,9 @@ app.use('/api/purchase-orders', purchaseOrdersRouter);
 app.use('/api/customer-orders', customerOrdersRouter);
 app.use('/api/analytics', analyticsRouter);
 
-// --- AI service reverse proxy (local dev) ---
+const { requireAuth, requireRole } = require('./middleware/auth');
+
+// --- AI service reverse proxy with RBAC protection ---
 // In Docker the frontend container's nginx proxies "/ai/*" -> http://ai-service:8000/*.
 // Locally the backend serves the static frontend, so Express mirrors that mapping here.
 // The browser only ever calls the same-origin "/ai/..." path — it never learns the AI
@@ -56,9 +58,7 @@ const AI_PROXY_TARGET = {
   port: Number(process.env.AI_PROXY_PORT || 8000)
 };
 
-app.use('/ai', (req, res) => {
-  // With app.use('/ai', ...) Express strips the "/ai" prefix, so req.url is already
-  // "/forecast?..." — exactly what the AI service expects (mirrors nginx trailing-slash).
+function proxyToAiService(req, res) {
   const proxyReq = http.request({
     host: AI_PROXY_TARGET.host,
     port: AI_PROXY_TARGET.port,
@@ -81,7 +81,40 @@ app.use('/ai', (req, res) => {
   });
 
   req.pipe(proxyReq);
-});
+}
+
+const aiRouter = express.Router();
+
+// Require authentication for all AI endpoints
+aiRouter.use(requireAuth);
+
+// Health check endpoint
+aiRouter.get('/health', proxyToAiService);
+
+// Sprint 1 Active AI Endpoint: /forecast
+// Allowed roles: ADMIN (Administrateur/Gérant), PRODUCTION (Responsable production), STOCK (Responsable stock/achats)
+// Forbidden roles (403): CASHIER (Vendeur/Caissier), EMPLOYEE (Employé)
+aiRouter.get('/forecast', requireRole(['ADMIN', 'PRODUCTION', 'STOCK']), proxyToAiService);
+
+// ETL run endpoint - restricted to ADMIN
+aiRouter.post('/etl/run', requireRole(['ADMIN']), proxyToAiService);
+
+// Sprint 1 (pre-dev): Production Recommendations protection — same RBAC mechanism as /forecast.
+// Business logic still returns 501 from the AI service; only the security layer is active here.
+// Allowed roles: ADMIN (Gérant), PRODUCTION (Responsable production).
+// Forbidden roles (403): STOCK (own endpoint in Sprint 3), CASHIER, EMPLOYEE.
+aiRouter.get('/production-recommendations', requireRole(['ADMIN', 'PRODUCTION']), proxyToAiService);
+
+// Sprint 3: Anomalies protection — same RBAC mechanism as /forecast & /production-recommendations.
+// /anomalies is stock-oriented (anomalies de stock) => allowed: ADMIN (Gérant), STOCK (Responsable stock/achats).
+// Forbidden (403): PRODUCTION (pas dans son périmètre), CASHIER (Vendeur/Caissier), EMPLOYEE (Employé).
+// Business logic still returns 501 from the AI service; only the security layer is active here.
+aiRouter.get('/anomalies', requireRole(['ADMIN', 'STOCK']), proxyToAiService);
+
+// Fallback proxy for all other /ai routes (requires auth)
+aiRouter.use(proxyToAiService);
+
+app.use('/ai', aiRouter);
 
 // 404 JSON Fallback Middleware for unmatched API routes
 app.use((req, res) => {
