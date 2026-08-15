@@ -605,4 +605,79 @@ body {
 
 .margin-top-10 { margin-top: 10px; }
 .margin-top-20 { margin-top: 20px; }
+
+/* === Segmentation IA & Suggestions (ADMIN) — dark theme consistent */
+.quadrant-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.quadrant-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--accent-purple);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.quadrant-card.empty { opacity: 0.5; }
+.quadrant-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 1.05rem;
+}
+.quadrant-icon { font-size: 1.2rem; }
+.quadrant-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.quadrant-item:last-child { border-bottom: none; }
+.quadrant-item-name { font-weight: 600; }
+.quadrant-meta {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.quadrant-meta .confidence { font-style: italic; opacity: 0.8; }
+
+/* Insights list (business-language suggestions) */
+.insight-list { display: grid; gap: 10px; }
+.insight-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.insight-type {
+  display: inline-block;
+  background: rgba(139,92,246,0.15);
+  color: var(--accent-purple);
+  border: 1px solid rgba(139,92,246,0.3);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.insight-message { margin: 4px 0; font-size: 0.92rem; }
+.insight-item .confidence {
+  display: inline-block;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* responsive grid */
+@media (max-width: 760px) {
+  .quadrant-grid { grid-template-columns: 1fr; }
+}
+
 .text-muted { color: var(--text-secondary); font-size: 0.9rem; }

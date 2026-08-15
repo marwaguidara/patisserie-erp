@@ -111,6 +111,15 @@ aiRouter.get('/production-recommendations', requireRole(['ADMIN', 'PRODUCTION'])
 // Business logic still returns 501 from the AI service; only the security layer is active here.
 aiRouter.get('/anomalies', requireRole(['ADMIN', 'STOCK']), proxyToAiService);
 
+// Sprint 3 (pre-dev): Segmentation & Insights protection - same RBAC mechanism as /forecast.
+// Strategic decisions (pricing / promotion) belong to the Gérant (ADMIN) alone.
+// Allowed roles: ADMIN (Gérant - seul role decisionnel strategique).
+// Forbidden (403): PRODUCTION, STOCK, CASHIER, EMPLOYEE.
+// Business logic still returns 501 from the AI service; only the security layer is active here.
+aiRouter.get('/segmentation', requireRole(['ADMIN']), proxyToAiService);
+aiRouter.get('/insights', requireRole(['ADMIN']), proxyToAiService);
+
+
 // Fallback proxy for all other /ai routes (requires auth)
 aiRouter.use(proxyToAiService);
 

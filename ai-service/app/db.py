@@ -51,6 +51,28 @@ def fetch_current_stocks() -> dict[int, float]:
     return {int(r["product_id"]): float(r["stock_quantity"] or 0.0) for r in rows}
 
 
+def fetch_product_margins() -> dict[int, float]:
+    """Consume the per-product margin already computed by the core backend at sale
+    time (SalesService / AnalyticsService -> sale_items.margin, sale_items.quantity),
+    in ONE batch aggregation. The AI service NEVER recomputes cost from recipes.
+    Returns {product_id: average_unit_margin} over items where the backend actually
+    recorded a positive margin (legacy rows carry margin=0 and are ignored)."""
+    rows = _run_query(
+        """
+        SELECT product_id, SUM(margin) AS margin_total, SUM(quantity) AS qty_total
+        FROM sale_items
+        WHERE margin > 0 AND quantity > 0
+        GROUP BY product_id
+        """
+    )
+    result: dict[int, float] = {}
+    for r in rows:
+        qty = float(r.get("qty_total") or 0.0)
+        if qty > 0:
+            result[int(r["product_id"])] = float(r.get("margin_total") or 0.0) / qty
+    return result
+
+
 def fetch_stock_snapshot():
     query = "SELECT id, name, current_stock, minimum_stock FROM ingredients ORDER BY id ASC"
     return _run_query(query)

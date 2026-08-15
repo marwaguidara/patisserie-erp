@@ -26,7 +26,7 @@ let customerOrdersList = [];
 // Backend authorization remains the single source of truth; these rules
 // only control what the UI reveals to each role.
 const ROLE_TABS = {
-  ADMIN: ['catalog', 'ingredients', 'production', 'sales', 'employees', 'suppliers', 'categories', 'purchase-orders', 'customer-orders', 'forecast', 'ai-technical'],
+    ADMIN:['catalog', 'ingredients', 'production', 'sales', 'employees', 'suppliers', 'categories', 'purchase-orders', 'customer-orders', 'forecast', 'ai-technical', 'segmentation'],
   STOCK: ['ingredients', 'suppliers', 'purchase-orders', 'forecast'],
   CASHIER: ['sales', 'customer-orders'],
   PRODUCTION: ['catalog', 'ingredients', 'production', 'customer-orders', 'purchase-orders', 'forecast'],
@@ -762,6 +762,97 @@ function renderSalesHistoryPlaceholder() {
 
 // Tab navigation — shared implementation, also reused by the anomaly
 // "open concerned screen" links (no second navigation system is created).
+// --- Section Segmentation IA & Suggestions (ADMIN only) ---
+// Quadrant labels in business-language (never expose raw technical quadrant codes).
+const QUADRANT_LABELS = {
+  star: { title: 'Étoiles — Meilleures ventes & rentables',        color: '--accent-yellow',  bg: 'rgba(245,158,11,0.12)' },
+  cash_cow: { title: 'Vaches à lait — Rentables mais demande modérée', color: '--accent-green',   bg: 'rgba(16,185,129,0.12)' },
+  en_observation: { title: 'À surveiller — Demande basse, à revoir',    color: '--text-secondary', bg: 'rgba(148,163,184,0.12)' },
+  to_remove: { title: 'À retirer — Moins rentable et moins demandé',   color: '--accent-red',    bg: 'rgba(239,68,68,0.12)' }
+};
+const QUADRANT_ORDER = ['star', 'cash_cow', 'en_observation', 'to_remove'];
+
+// Fetch /ai/segmentation + /ai/insights for the current ADMIN user and render
+// the 4-quadrant grid + the business-language insights list. 403 → tab hidden.
+async function loadSegmentation() {
+  const wrap = document.getElementById('segmentation-quadrants');
+  const insightsEl = document.getElementById('segmentation-insights');
+  if (!wrap || !insightsEl) return;
+
+  wrap.innerHTML = '<p class="text-muted">Chargement de la segmentation IA…</p>';
+  insightsEl.innerHTML = '<p class="text-muted">Chargement des suggestions…</p>';
+
+  try {
+    const headers = authToken ? { Authorization: `Bearer ${authToken}` } : {};
+
+    // Segmentation
+    const segRes = await fetch(aiUrl('/segmentation'), { headers });
+    if (segRes.status === 401 || segRes.status === 403) {
+      // RBAC: non-ADMIN cannot see this screen. Hide the tab entirely.
+      const tabBtn = document.querySelector('.tab-btn[data-tab="segmentation"]');
+      if (tabBtn) tabBtn.style.display = 'none';
+      wrap.innerHTML = '';
+      insightsEl.innerHTML = '';
+      return;
+    }
+    if (!segRes.ok) throw new Error(`Segmentation ${segRes.status}`);
+    const segData = await segRes.json();
+    const segments = Array.isArray(segData.segments) ? segData.segments : [];
+
+    // Build quadrant buckets (empty allowed — no hardcoded data)
+    const buckets = { star: [], cash_cow: [], en_observation: [], to_remove: [] };
+    segments.forEach((p) => {
+      if (p && p.quadrant && buckets[p.quadrant]) buckets[p.quadrant].push(p);
+    });
+
+    // Render grid (always 4 cards, even if empty — "Cas limite" handling)
+    wrap.innerHTML = QUADRANT_ORDER.map((q) => {
+      const cfg = QUADRANT_LABELS[q];
+      const items = buckets[q];
+      return `
+      <div class="quadrant-card" style="background:${cfg.bg};border-color:rgba(var(--border-rgb,255,255,255),0.12);">
+        <div class="quadrant-header" style="color:var(${cfg.color});">
+          <span class="quadrant-icon">${q === 'star' ? '⭐' : q === 'cash_cow' ? '🐄' : q === 'en_observation' ? '🔍' : '🚫'}</span>
+          <strong>${cfg.title}</strong>
+        </div>
+        ${items.length === 0
+          ? '<p class="text-muted" style="font-size:0.85rem;">Aucun produit pour le moment.</p>'
+          : items.map((p) => `
+            <div class="quadrant-item">
+              <span class="quadrant-item-name">${escapeHtml(p.product_name || ('Produit #' + (p.product_id ?? '')))}</span>
+              <span class="quadrant-meta">Marge ${p.margin !== undefined ? Number(p.margin).toFixed(0) + '%' : '—'} · Fréquence ${p.sales_frequency !== undefined ? Number(p.sales_frequency).toFixed(1) : '—'} /mois
+                <span class="confidence">${p.confidence && p.confidence.level ? ' (confiance ' + escapeHtml(String(p.confidence.level)) + ')' : ''}</span></span>
+            </div>`).join('')
+        }
+      </div>`;
+    }).join('');
+
+    // Insights (business-language — render the message as-is, no jargon added)
+    const insRes = await fetch(aiUrl('/insights'), { headers });
+    if (insRes.status === 401 || insRes.status === 403) {
+      insightsEl.innerHTML = '';
+      return;
+    }
+    if (!insRes.ok) throw new Error(`Insights ${insRes.status}`);
+    const insData = await insRes.json();
+    const insights = Array.isArray(insData.insights) ? insData.insights : [];
+
+    insightsEl.innerHTML = insights.length === 0
+      ? '<p class="text-muted">Aucune suggestion pour le moment.</p>'
+      : insights.map((i) => `
+        <div class="insight-item">
+          <span class="insight-type">${escapeHtml(i.type || 'suggestion')}</span>
+          <p class="insight-message">${escapeHtml(i.message || '')}</p>
+          ${i.confidence && i.confidence.level ? `<span class="confidence">Confiance : ${escapeHtml(String(i.confidence.level))}</span>` : ''}
+        </div>`).join('');
+  } catch (err) {
+    console.error('Segmentation load error:', err);
+    wrap.innerHTML = '<p class="text-muted">Impossible de charger la segmentation IA pour le moment.</p>';
+    insightsEl.innerHTML = '<p class="text-muted">Suggestions temporairement inaccessibles.</p>';
+  }
+}
+
+// --- Tab switching ---
 function switchToTab(tabName) {
   const tab = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
   if (!tab) return;
@@ -771,6 +862,33 @@ function switchToTab(tabName) {
   const target = document.getElementById(`tab-${tabName}`);
   if (target) target.classList.add('active');
 }
+
+// Wiring for the Segmentation tab: load on open + button refresh. Also defines
+// escapeHtml if not already present (used by loadSegmentation for XSS-safe render).
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('refresh-segmentation');
+  if (btn) btn.addEventListener('click', () => loadSegmentation());
+});
+
+// Patch switchToTab so opening the Segmentation tab auto-loads data.
+const _origSwitchToTab = switchToTab;
+switchToTab = function (tabName) {
+  const r = _origSwitchToTab(tabName);
+  if (tabName === 'segmentation' && hasAnyRole('ADMIN')) {
+    loadSegmentation();
+  }
+  return r;
+};
 
 function initTabs() {
   document.querySelectorAll('.tab-btn').forEach((tab) => {

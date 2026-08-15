@@ -66,6 +66,8 @@ def forecast(product_id: int, horizon_days: int = 7) -> dict[str, Any]:
 def invalidate_ai_cache(product_id: int | None = None) -> dict[str, Any]:
     invalidate_cache(endpoint="forecast", product_id=product_id)
     invalidate_cache(endpoint="production-recommendations", product_id=product_id)
+    invalidate_cache(endpoint="segmentation", product_id=product_id)
+    invalidate_cache(endpoint="insights", product_id=product_id)
     return {"status": "ok", "message": f"Cache invalidated for product_id={product_id}"}
 
 
@@ -101,28 +103,30 @@ def anomalies() -> JSONResponse:
 
 @app.get("/segmentation")
 def segmentation() -> JSONResponse:
-    return JSONResponse(
-        status_code=501,
-        content={
-            "value": None,
-            "confidence": {"level": "faible", "interval": [0.0, 0.0]},
-            "status": "insufficient_data",
-            "error": "Not implemented yet",
-        },
-    )
+    from app.segmentation import get_segmentation
+
+    try:
+        return JSONResponse(get_segmentation(), status_code=200)
+    except Exception as e:
+        # Technical failure (not history-related) -> explicit contract-shaped error.
+        return JSONResponse(
+            status_code=500,
+            content={"segments": [], "status": "error", "error": str(e)},
+        )
 
 
 @app.get("/insights")
 def insights() -> JSONResponse:
-    return JSONResponse(
-        status_code=501,
-        content={
-            "value": None,
-            "confidence": {"level": "faible", "interval": [0.0, 0.0]},
-            "status": "insufficient_data",
-            "error": "Not implemented yet",
-        },
-    )
+    from app.segmentation import get_insights
+
+    try:
+        return JSONResponse(get_insights(), status_code=200)
+    except Exception as e:
+        # Technical failure (not history-related) -> explicit contract-shaped error.
+        return JSONResponse(
+            status_code=500,
+            content={"insights": [], "status": "error", "error": str(e)},
+        )
 
 
 @app.post("/etl/run")

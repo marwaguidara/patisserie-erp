@@ -48,7 +48,8 @@
       <button class="tab-btn" data-tab="purchase-orders">🚚 Commandes Fournisseurs</button>
       <button class="tab-btn" data-tab="customer-orders">🎂 Commandes Clients</button>
       <button class="tab-btn" data-tab="forecast">🔮 Prévision IA</button>
-      <button class="tab-btn" data-tab="ai-technical">⚙️ Informations techniques</button>
+            <button class="tab-btn" data-tab="ai-technical">⚙️ Informations techniques</button>
+      <button class="tab-btn" data-tab="segmentation">📊 Segmentation IA & Suggestions</button>
     </nav>
 
     <!-- Main Content -->
@@ -338,7 +339,39 @@
       </section>
 
 <!-- Tab: Informations techniques (réservé ADMIN) -->
-      <section id="tab-ai-technical" class="tab-content">
+          <!-- Tab: Segmentation IA & Suggestions -->
+    <section id="tab-segmentation" class="tab-content">
+      <div class="section-header">
+        <div>
+          <h2>Segmentation IA &amp; Suggestions</h2>
+          <p class="section-desc">
+            Positionnez vos produits dans la grille 4-quadrants (performance vs demande) et suivez
+            les suggestions d'optimisation proposées par l'IA, en langage métier.
+          </p>
+        </div>
+        <button class="btn btn-secondary" id="refresh-segmentation" title="Actualiser la segmentation IA">🔄 Actualiser</button>
+      </div>
+
+      <!-- Grille des quadrants -->
+      <div id="segmentation-quadrants" class="quadrant-grid">
+        <!-- chacun des 4 quadrants est rempli dynamiquement par loadSegmentation() -->
+      </div>
+
+      <!-- Suggestions / insights en langage métier -->
+      <div class="margin-top-20">
+        <h3>📋 Suggestions du moment</h3>
+        <p class="text-muted" style="margin-bottom:12px;">
+          Ces recommandations vous aident à agir sur les produits les plus impactants pour votre
+          trésorerie. Source : <code>/ai/insights</code> (rapportée mot pour mot par l'IA, sans jargon statistique).
+        </p>
+        <div id="segmentation-insights" class="insight-list">
+          <!-- rempli dynamiquement -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab: AI Technical (legacy) -->
+    <section id="tab-ai-technical" class="tab-content">
         <div class="section-header">
           <div>
             <h2>⚙️ Informations techniques</h2>
