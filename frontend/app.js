@@ -820,7 +820,7 @@ async function loadSegmentation() {
           : items.map((p) => `
             <div class="quadrant-item">
               <span class="quadrant-item-name">${escapeHtml(p.product_name || ('Produit #' + (p.product_id ?? '')))}</span>
-              <span class="quadrant-meta">Marge ${p.margin !== undefined ? Number(p.margin).toFixed(0) + '%' : '—'} · Fréquence ${p.sales_frequency !== undefined ? Number(p.sales_frequency).toFixed(1) : '—'} /mois
+                            <span class="quadrant-meta">Marge ${p.margin !== undefined ? Number(p.margin).toFixed(2) + '€/u' : '—'} · Fréquence ${p.sales_frequency !== undefined ? Number(p.sales_frequency).toFixed(1) : '—'} /mois
                 <span class="confidence">${p.confidence && p.confidence.level ? ' (confiance ' + escapeHtml(String(p.confidence.level)) + ')' : ''}</span></span>
             </div>`).join('')
         }
