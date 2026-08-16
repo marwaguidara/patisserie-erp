@@ -1019,7 +1019,7 @@ async function loadAdminDashboard() {
 
   try {
     // Single authoritative source for this screen; KPIs core + IA summary already composed by backend.
-    const data = await safeFetchJson(`${API_BASE}/dashboard/summary`, { headers: authHeaders() });
+    const data = await safeFetchJson(`${API_BASE}/dashboard/summary`, { headers: { Authorization: `Bearer ${authToken}` } });
     __dashboardSummaryCache = data; // cache for export — exact same snapshot shown on screen
 
     // --- KPI CORE (reuse /api/sales/metrics + /api/stocks/alerts fields) ---

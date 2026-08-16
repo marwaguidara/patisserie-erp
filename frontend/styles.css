@@ -271,6 +271,11 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 20px;
+  margin-bottom: 16px;
+}
+
+.card:last-child {
+  margin-bottom: 0;
 }
 
 .product-card {
