@@ -26,7 +26,7 @@ let customerOrdersList = [];
 // Backend authorization remains the single source of truth; these rules
 // only control what the UI reveals to each role.
 const ROLE_TABS = {
-    ADMIN:['catalog', 'ingredients', 'production', 'sales', 'employees', 'suppliers', 'categories', 'purchase-orders', 'customer-orders', 'forecast', 'ai-technical', 'segmentation'],
+        ADMIN:['catalog', 'ingredients', 'production', 'sales', 'employees', 'suppliers', 'categories', 'purchase-orders', 'customer-orders', 'forecast', 'ai-technical', 'segmentation', 'dashboard'],
   STOCK: ['ingredients', 'suppliers', 'purchase-orders', 'forecast'],
   CASHIER: ['sales', 'customer-orders'],
   PRODUCTION: ['catalog', 'ingredients', 'production', 'customer-orders', 'purchase-orders', 'forecast'],
@@ -887,6 +887,9 @@ switchToTab = function (tabName) {
   if (tabName === 'segmentation' && hasAnyRole('ADMIN')) {
     loadSegmentation();
   }
+  if (tabName === 'dashboard' && hasAnyRole('ADMIN')) {
+    loadAdminDashboard();
+  }
   return r;
 };
 
@@ -927,6 +930,9 @@ function initAuth() {
       await loadAuthDependentData();
       loadSalesData();
       loadAnomalies();
+      if (currentUser && currentUser.role === 'ADMIN') {
+        loadAdminDashboard();
+      }
     } catch (err) {
       showToast(err.message, true);
     }
@@ -999,6 +1005,98 @@ async function fetchAlerts() {
   } catch (err) {
     console.error('Error fetching alerts:', err);
   }
+}
+
+// Sprint 5 — ADMIN Dashboard consolidated view
+// Reuses existing source endpoints (sales/metrics, stocks/alerts, /ai/*),
+// never duplicates widget logic nor hardcodes business data.
+let __dashboardSummaryCache = null; // snapshot of /dashboard/summary used by both render + export
+async function loadAdminDashboard() {
+  const summaryBox = document.getElementById('dashboard-kpi-cards');
+  const iaBox = document.getElementById('dashboard-ia-summary');
+  const linksBox = document.getElementById('dashboard-links');
+  if (!summaryBox) return;
+
+  try {
+    // Single authoritative source for this screen; KPIs core + IA summary already composed by backend.
+    const data = await safeFetchJson(`${API_BASE}/dashboard/summary`, { headers: authHeaders() });
+    __dashboardSummaryCache = data; // cache for export — exact same snapshot shown on screen
+
+    // --- KPI CORE (reuse /api/sales/metrics + /api/stocks/alerts fields) ---
+    const { kpis } = data;
+    summaryBox.innerHTML = `
+      <div class="card"><div class="card-body"><h3>CA mensuel</h3><p class="kpi-value">${Number(kpis.revenue || 0).toFixed(2)} €</p></div></div>
+      <div class="card"><div class="card-body"><h3>Stock critique</h3><p class="kpi-value">${kpis.critical_stock_count || 0}</p></div></div>
+      <div class="card"><div class="card-body"><h3>Meilleures ventes</h3>
+        <ul class="kpi-list">${(kpis.top_products || []).map((p) =>
+          `<li>${p.name} — ${(p.units_sold || 0)} u</li>`).join('')}</ul></div></div>`;
+
+    // --- IA SUMMARY (reuse /ai forecast|anomalies|segmentation summaries) ---
+    const fc = data.forecast_summary || {};
+    iaBox.innerHTML = `
+      <div class="card"><div class="card-body"><h3>Résumé prévision</h3>
+        <p class="kpi-value">${fc.product_name || '—'} → ${(fc.forecast_next || 0).toFixed(1)} u / ${(fc.horizon_days || 7)}j</p></div></div>
+      <div class="card"><div class="card-body"><h3>Anomalies actives</h3>
+        <p class="kpi-value">${data.active_anomalies_count || 0}</p></div></div>
+      <div class="card"><div class="card-body"><h3>Segmentation IA</h3>
+        <p class="kpi-value">${(data.segmentation_summary || {}).segments_count || 0} segments</p></div></div>`;
+
+    // --- Liens rapides vers écrans détaillés EXISTANTS ---
+    linksBox.innerHTML = `
+      <div class="dashboard-links-row">
+        <button class="btn btn-secondary btn-sm" onclick="switchToTab('sales')"><span aria-label="CA">💰 CA détaillé</span></button>
+        <button class="btn btn-secondary btn-sm" onclick="switchToTab('ingredients')"><span aria-label="Stock">🌾 Stock détaillé</span></button>
+        <button class="btn btn-secondary btn-sm" onclick="switchToTab('forecast')"><span aria-label="Forecast">🔮 Prévision complète</span></button>
+        <button class="btn btn-secondary btn-sm" onclick="switchToTab('segmentation')"><span aria-label="Segmentation">📊 Segmentation complète</span></button>
+      </div>`;
+
+    // Bind export + refresh (safe to re-bind since handler is idempotent via off/on)
+    bindDashboardActions();
+  } catch (err) {
+    console.error('Dashboard load error:', err);
+    summaryBox.innerHTML = '<p class="error">Impossible de charger le dashboard.</p>';
+  }
+}
+
+// Sprint 5 — Export Excel : uses the SAME object rendered on screen (cache snapshot),
+// so exported numbers are identical to what the user sees (constraint 2).
+function exportDashboardToExcel() {
+  const data = __dashboardSummaryCache;
+  if (!data || !window.XLSX) {
+    showToast('Aucune donnée à exporter ou lib XLSX indisponible.', true);
+    return;
+  }
+  const wb = XLSX.utils.book_new();
+  // Sheet 1 – Core KPIs
+  const kpiRows = [
+    { Indicateur: 'Chiffre d\'affaires (CA)', Valeur: Number(data.kpis.revenue || 0).toFixed(2) + ' €' },
+    { Indicateur: 'Stock critique', Valeur: data.kpis.critical_stock_count || 0 }
+  ];
+  (data.kpis.top_products || []).forEach((p, i) => {
+    kpiRows.push({ Indicateur: `Top produit #${i + 1}`, Valeur: `${p.name} (${p.units_sold || 0} u)` });
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(kpiRows), 'KPIs');
+
+  // Sheet 2 – AI summary
+  const fc = data.forecast_summary || {};
+  const seg = data.segmentation_summary || {};
+  const iaRows = [
+    { Section: 'Forecast', Produit: fc.product_name || '—', Prévision: Number(fc.forecast_next || 0).toFixed(1), Horizon: `${fc.horizon_days || 7} j` },
+    { Section: 'Anomalies', Compteur: data.active_anomalies_count || 0 },
+    { Section: 'Segmentation', Segments: seg.segments_count || 0 }
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(iaRows), 'Résumé IA');
+
+  XLSX.writeFile(wb, 'dashboard-admin.xlsx');
+  showToast('Export Excel généré (chiffres identiques à l\'écran).');
+}
+
+// Bind export + refresh buttons to the admin dashboard section
+function bindDashboardActions() {
+  const exportBtn = document.getElementById('export-dashboard-btn');
+  const refreshBtn = document.getElementById('refresh-dashboard-btn');
+  if (exportBtn) exportBtn.onclick = () => exportDashboardToExcel();
+  if (refreshBtn) refreshBtn.onclick = () => loadAdminDashboard();
 }
 
 // ===== AI anomalies -> EXISTING dashboard notification system (Sprint 3, Prompt 3) =====

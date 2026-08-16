@@ -13,6 +13,7 @@ const suppliersRouter = require('./routes/suppliers');
 const purchaseOrdersRouter = require('./routes/purchaseOrders');
 const customerOrdersRouter = require('./routes/customerOrders');
 const analyticsRouter = require('./routes/analytics');
+const dashboardRouter = require('./routes/dashboard');
 
 const app = express();
 
@@ -45,6 +46,7 @@ app.use('/api/suppliers', suppliersRouter);
 app.use('/api/purchase-orders', purchaseOrdersRouter);
 app.use('/api/customer-orders', customerOrdersRouter);
 app.use('/api/analytics', analyticsRouter);
+app.use('/api/dashboard', dashboardRouter);
 
 const { requireAuth, requireRole } = require('./middleware/auth');
 

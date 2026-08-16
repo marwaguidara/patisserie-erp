@@ -7,7 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+        <link rel="stylesheet" href="styles.css">
+   <!-- Sprint 5 — Export lib (Excel) : single CDN dependency, no npm install -->
+   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
   <div class="app-container">
@@ -47,17 +49,42 @@
       <button class="tab-btn" data-tab="categories">🏷️ Catégories</button>
       <button class="tab-btn" data-tab="purchase-orders">🚚 Commandes Fournisseurs</button>
       <button class="tab-btn" data-tab="customer-orders">🎂 Commandes Clients</button>
-      <button class="tab-btn" data-tab="forecast">🔮 Prévision IA</button>
+            <button class="tab-btn" data-tab="forecast">🔮 Prévision IA</button>
             <button class="tab-btn" data-tab="ai-technical">⚙️ Informations techniques</button>
       <button class="tab-btn" data-tab="segmentation">📊 Segmentation IA & Suggestions</button>
+      <button class="tab-btn" data-tab="dashboard">📊 Dashboard ADMIN</button>
     </nav>
 
     <!-- Main Content -->
     <main class="main-content">
       <div id="toast" class="toast hidden"></div>
 
-      <!-- Anomalies IA actives (reutilise le composant d'alertes existant du dashboard) -->
+            <!-- Anomalies IA actives (reutilise le composant d'alertes existant du dashboard) -->
       <div id="anomalies-panel" class="anomalies-panel hidden"></div>
+
+      <!-- Tab: Dashboard ADMIN — Sprint 5 consolidated view (KPIs core + IA summary) -->
+      <!-- Visible ADMIN only via applyRoleVisibility(); widgets reuse existing source endpoints. -->
+      <section id="tab-dashboard" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2>📊 Dashboard Stratégique ADMIN</h2>
+            <p class="section-desc">Vue consolidée indicateurs clés + résumés IA — données issues des écrans existants.</p>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-primary" id="export-dashboard-btn">📥 Exporter Excel</button>
+            <button class="btn btn-secondary" id="refresh-dashboard-btn">🔄 Actualiser</button>
+          </div>
+        </div>
+
+        <!-- KPI CORE (réutilise /api/sales/metrics + /api/stocks/alerts) -->
+        <div class="dashboard-summary-cards" id="dashboard-kpi-cards"></div>
+
+        <!-- IA SUMMARY (réutilise /ai/forecast, /ai/anomalies, /ai/segmentation) -->
+        <div class="dashboard-ia-summary" id="dashboard-ia-summary"></div>
+
+        <!-- Liens rapides vers écrans détaillés existants -->
+        <div class="dashboard-links" id="dashboard-links"></div>
+      </section>
 
       <!-- Tab 1: Product Catalog -->
       <section id="tab-catalog" class="tab-content active">
