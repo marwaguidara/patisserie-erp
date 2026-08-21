@@ -1,108 +1,887 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
-  title: Bakery Platform API
-  version: 2.0.0
+  title: ERP Pâtisserie Platform API
+  version: 1.0.0
   description: >
-    Central API specification for the bakery platform. This document was regenerated from the live backend
-    implementation and reflects the Sprint 5 state of the codebase. The server is mounted at /api and the
-    contract is intended to match the actual Express routes and role checks in the app.
-  license:
-    name: Internal
+    API consolidée de la Plateforme ERP Pâtisserie. Documente uniquement les
+    endpoints réellement présents dans le backend Express/Knex (backend/src)
+    et son reverse-proxy vers le service IA FastAPI (ai-service). Validation
+    Zod, matrice RBAC réelle, authentification JWT Bearer (expiration 24 h).
+
 servers:
-  - url: http://localhost:5000/api
-    description: Local development server
+  - url: http://localhost:4000
+    description: Backend Express local (proxya /ai/* vers le service IA, port 8000)
+
+tags:
+  - name: Auth
+    description: Authentification et profil (JWT)
+  - name: Santé
+    description: Endpoint de santé
+  - name: Produits
+    description: Catalogue produits et recettes
+  - name: Catégories
+    description: Catégories de produits
+  - name: Stocks
+    description: Ingrédients et mouvements de stock
+  - name: Ventes
+    description: Ventes, historique, métriques et tickets
+  - name: Employés
+    description: RH — profils, plannings, congés, self-service
+  - name: Fournisseurs
+    description: Fournisseurs et performance
+  - name: Commandes
+    description: Commandes fournisseur (PO) et commandes client
+  - name: Notifications
+    description: Notifications filtrées par RBAC
+  - name: Dashboard
+    description: Dashboard stratégique (ADMIN)
+  - name: Audit Logs
+    description: Journal des actions (ADMIN)
+  - name: Analytics
+    description: Export consolidé (ADMIN)
+  - name: IA
+    description: Endpoints IA (proxy vers FastAPI)
+
 security:
   - bearerAuth: []
 
-tags:
-  - name: Health
-  - name: Auth
-  - name: Categories
-  - name: Products
-  - name: Ingredients
-  - name: Sales
-  - name: Employees
-  - name: Suppliers
-  - name: Purchase Orders
-  - name: Customer Orders
-  - name: Analytics
-  - name: AI Forecast
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
 
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      description: Identifiant entier de la ressource
+      schema:
+        type: integer
+        format: int64
+
+  schemas:
+    UserRole:
+      type: string
+      description: Rôles utilisateur (enum migration users.role)
+      enum: [ADMIN, PRODUCTION, CASHIER, STOCK, EMPLOYEE]
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/UserRole'
+    LoginResponse:
+      type: object
+      description: Réponse de POST /api/auth/login
+      required: [token, user]
+      properties:
+        token:
+          type: string
+          description: "JWT (24 h) à placer dans Authorization: Bearer <token>"
+        user:
+          $ref: '#/components/schemas/User'
+    Product:
+      type: object
+      description: Produit avec sa recette (ingrédients) jointe
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        price:
+          type: number
+          format: float
+        category_id:
+          type: integer
+          nullable: true
+        category_name:
+          type: string
+          nullable: true
+        stock_quantity:
+          type: integer
+        is_active:
+          type: boolean
+        ingredients:
+          type: array
+          items:
+            type: object
+            properties:
+              ingredient_id:
+                type: integer
+              ingredient_name:
+                type: string
+              unit:
+                type: string
+              current_stock:
+                type: number
+              minimum_stock:
+                type: number
+              quantity_required:
+                type: number
+    RecipeItem:
+      type: object
+      properties:
+        ingredient_id:
+          type: integer
+        ingredient_name:
+          type: string
+        unit:
+          type: string
+        quantity_required:
+          type: number
+          format: float
+    Ingredient:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        unit:
+          type: string
+        current_stock:
+          type: number
+        minimum_stock:
+          type: number
+        cost_per_unit:
+          type: number
+          nullable: true
+        expiration_date:
+          type: string
+          format: date
+          nullable: true
+        supplier_id:
+          type: integer
+          nullable: true
+        supplier_name:
+          type: string
+          nullable: true
+        is_low_stock:
+          type: boolean
+        is_expiring_soon:
+          type: boolean
+    StockAlerts:
+      type: object
+      properties:
+        low_stock_count:
+          type: integer
+        expiring_soon_count:
+          type: integer
+        low_stock:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ingredient'
+        expiring_soon:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ingredient'
+    StockMovementType:
+      type: string
+      description: Type de mouvement de stock
+      enum: [IN, OUT, WASTE, ADJUSTMENT]
+
+    Sale:
+      type: object
+      properties:
+        id:
+          type: integer
+        receipt_number:
+          type: string
+        cashier_id:
+          type: integer
+          nullable: true
+        total_amount:
+          type: number
+          format: float
+        total_cost:
+          type: number
+          format: float
+        total_margin:
+          type: number
+          format: float
+        total_items:
+          type: integer
+        status:
+          type: string
+        payment_method:
+          type: string
+        customer_name:
+          type: string
+        customer_phone:
+          type: string
+          nullable: true
+        completed_at:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              product_id:
+                type: integer
+              product_name:
+                type: string
+              quantity:
+                type: integer
+              unit_price:
+                type: number
+              cost_per_unit:
+                type: number
+              margin:
+                type: number
+              subtotal:
+                type: number
+        payments:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              payment_method:
+                type: string
+              amount:
+                type: number
+              status:
+                type: string
+              provider:
+                type: string
+              created_at:
+                type: string
+    PeriodMetrics:
+      type: object
+      properties:
+        sales_count:
+          type: integer
+        total_revenue:
+          type: number
+        average_ticket:
+          type: number
+    SalesMetrics:
+      type: object
+      properties:
+        day:
+          $ref: '#/components/schemas/PeriodMetrics'
+        week:
+          $ref: '#/components/schemas/PeriodMetrics'
+        month:
+          $ref: '#/components/schemas/PeriodMetrics'
+        top_products:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              total_sold:
+                type: number
+              revenue:
+                type: number
+    Employee:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        first_name:
+          type: string
+        last_name:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        job_title:
+          type: string
+          nullable: true
+        hire_date:
+          type: string
+          format: date
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+        updated_at:
+          type: string
+        user_name:
+          type: string
+        user_email:
+          type: string
+        user_role:
+          $ref: '#/components/schemas/UserRole'
+    Supplier:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        contact_person:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+        lead_time:
+          type: string
+          nullable: true
+        quality:
+          type: string
+          nullable: true
+        rating:
+          type: number
+          nullable: true
+        purchase_orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseOrder'
+        performance:
+          type: object
+          properties:
+            purchase_orders:
+              type: integer
+            total_spend:
+              type: number
+            ingredients_count:
+              type: integer
+        ingredients:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              current_stock:
+                type: number
+              cost_per_unit:
+                type: number
+    PurchaseOrderStatus:
+      type: string
+      enum: [DRAFT, ORDERED, RECEIVED, CANCELLED]
+    PurchaseOrder:
+      type: object
+      description: Commande fournisseur
+      properties:
+        id:
+          type: integer
+        supplier_id:
+          type: integer
+        supplier_name:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/PurchaseOrderStatus'
+        total_cost:
+          type: number
+          format: float
+        received_at:
+          type: string
+          nullable: true
+        created_by:
+          type: integer
+          nullable: true
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              purchase_order_id:
+                type: integer
+              ingredient_id:
+                type: integer
+              ingredient_name:
+                type: string
+                nullable: true
+              quantity_ordered:
+                type: number
+              quantity_received:
+                type: number
+              unit_cost:
+                type: number
+    CustomerOrderStatus:
+      type: string
+      enum: [PENDING, IN_PRODUCTION, READY, DELIVERED, CANCELLED]
+    CustomerOrder:
+      type: object
+      description: Commande client
+      properties:
+        id:
+          type: integer
+        customer_name:
+          type: string
+        customer_phone:
+          type: string
+          nullable: true
+        delivery_date:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/CustomerOrderStatus'
+        total_price:
+          type: number
+          format: float
+        special_instructions:
+          type: string
+          nullable: true
+        user_id:
+          type: integer
+          nullable: true
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              customer_order_id:
+                type: integer
+              product_id:
+                type: integer
+              quantity:
+                type: integer
+              unit_price:
+                type: number
+              subtotal:
+                type: number
+    LeaveStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED]
+    Leave:
+      type: object
+      properties:
+        id:
+          type: integer
+        employee_id:
+          type: integer
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        reason:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/LeaveStatus'
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        message:
+          type: string
+        module:
+          type: string
+        category:
+          type: string
+        read:
+          type: boolean
+        created_at:
+          type: string
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+          nullable: true
+        user_name:
+          type: string
+        user_email:
+          type: string
+        user_role:
+          type: string
+        action:
+          type: string
+        entity_type:
+          type: string
+          nullable: true
+        entity_id:
+          type: string
+          nullable: true
+        old_values:
+          type: object
+          nullable: true
+        new_values:
+          type: object
+          nullable: true
+        ip_address:
+          type: string
+          nullable: true
+        user_agent:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+    AuditLogResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total:
+              type: integer
+            totalPages:
+              type: integer
+    ForecastResponse:
+      type: object
+      description: Réponse de GET /ai/forecast
+      properties:
+        value:
+          type: number
+          nullable: true
+        confidence:
+          type: object
+          properties:
+            level:
+              type: string
+              enum: [faible, moyenne, haute]
+            interval:
+              type: array
+              items:
+                type: number
+              minItems: 2
+              maxItems: 2
+        status:
+          type: string
+          enum: [ok, insufficient_data, error]
+        model_version:
+          type: string
+    AnomalyResponse:
+      type: object
+      description: Réponse de GET /ai/anomalies
+      properties:
+        anomalies:
+          type: array
+          items:
+            type: object
+            properties:
+              product_id:
+                type: integer
+              type:
+                type: string
+              severity:
+                type: string
+              confidence:
+                type: object
+              description:
+                type: string
+        excluded_products:
+          type: array
+          items:
+            type: integer
+        status:
+          type: string
+          enum: [ok, error]
+    SegmentationResponse:
+      type: object
+      description: Réponse de GET /ai/segmentation
+      properties:
+        segments:
+          type: array
+          items:
+            type: object
+            properties:
+              product_id:
+                type: integer
+              product_name:
+                type: string
+              quadrant:
+                type: string
+                enum: [star, cash_cow, dormant, to_remove, en_observation]
+              margin:
+                type: number
+              sales_frequency:
+                type: number
+              n_days:
+                type: integer
+              confidence:
+                type: object
+        status:
+          type: string
+          enum: [ok, error]
+    InsightsResponse:
+      type: object
+      description: Réponse de GET /ai/insights
+      properties:
+        insights:
+          type: array
+          items:
+            type: object
+            properties:
+              product_id:
+                type: integer
+              type:
+                type: string
+              message:
+                type: string
+              confidence:
+                type: object
+        status:
+          type: string
+          enum: [ok, error]
+    ProductionRecommendation:
+      type: object
+      description: Réponse de GET /ai/production-recommendations
+      properties:
+        recommended_quantity:
+          type: number
+          nullable: true
+        forecast:
+          type: number
+          nullable: true
+        stock:
+          type: number
+        safety_margin:
+          type: number
+        waste_adjustment:
+          type: number
+        confidence:
+          type: object
+        status:
+          type: string
+          enum: [ok, insufficient_data, manual_review_required, error]
+        model_version:
+          type: string
+        based_on_forecast:
+          type: object
+    DashboardSummary:
+      type: object
+      description: Réponse de GET /api/dashboard/summary
+      properties:
+        kpis:
+          type: object
+          properties:
+            revenue:
+              type: number
+            critical_stock_count:
+              type: integer
+            top_products:
+              type: array
+              items:
+                type: object
+                properties:
+                  product_id:
+                    type: integer
+                  name:
+                    type: string
+                  units_sold:
+                    type: integer
+        forecast_summary:
+          type: object
+          properties:
+            product_id:
+              type: integer
+            product_name:
+              type: string
+            horizon_days:
+              type: integer
+            forecast_next:
+              type: number
+            status:
+              type: string
+        active_anomalies_count:
+          type: integer
+        segmentation_summary:
+          type: object
+          properties:
+            segments_count:
+              type: integer
+            segments:
+              type: array
+        status:
+          type: string
+        cached:
+          type: boolean
+    Error:
+      type: object
+      description: Réponse d'erreur standardisée (middleware errorHandler)
+      properties:
+        success:
+          type: boolean
+          default: false
+        message:
+          type: string
+        code:
+          type: string
+        timestamp:
+          type: string
+        error:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: Authentification requise (JWT absent, invalide ou expiré)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Invalid or expired token.
+            code: UNAUTHORIZED
+            success: false
+            message: Invalid or expired token.
+    Forbidden:
+      description: Accès refusé (rôle/permission non autorisée)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Access denied. Requires one of roles: [ADMIN, PRODUCTION]"
+            code: FORBIDDEN
+            success: false
+            message: "Access denied. Requires one of roles: [ADMIN, PRODUCTION]"
+    NotFound:
+      description: Ressource introuvable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Product not found.
+            code: NOT_FOUND
+            success: false
+            message: Product not found.
+    BadRequest:
+      description: Requête invalide (champs requis, stock insuffisant, statut invalide…)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Product name and price are required.
+            code: VALIDATION_ERROR
+            success: false
+    ValidationError:
+      description: Échec de validation Zod (middleware validate)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+              details:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    message:
+                      type: string
+                    code:
+                      type: string
+          example:
+            error: "Validation failed for body: email: Invalid email address."
+            details:
+              - path: email
+                message: Invalid email address.
+                code: invalid_email
+    TooManyRequests:
+      description: Quota de requêtes dépassé (rate limiting)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            success: false
+            message: Trop de requêtes vers l'API. Veuillez réessayer ultérieurement.
+            code: TOO_MANY_REQUESTS
+            error: Too many requests
+    ServerError:
+      description: Erreur interne du serveur (500) ou service IA indisponible (502)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Internal Server Error
+            code: INTERNAL_ERROR
+            success: false
+            message: Internal Server Error
 paths:
-  /health:
+  /api/health:
     get:
-      tags: [Health]
-      summary: Health check
+      summary: Vérification de l'état du service
+      description: Endpoint de santé public (walking skeleton). Ne requiert pas d'authentification.
+      tags: [Santé]
+      security: []
       responses:
         '200':
-          description: Service health status
+          description: Service opérationnel
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthStatus'
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: UP
+                  timestamp:
+                    type: string
+                  service:
+                    type: string
+                  walking_skeleton:
+                    type: boolean
+                  sprint1:
+                    type: boolean
+              example:
+                status: UP
+                timestamp: '2026-08-21T00:00:00.000Z'
+                service: Bakery Management Platform Central API
+                walking_skeleton: true
+                sprint1: true
 
-  /forecast:
-    get:
-      tags: [AI Forecast]
-      summary: Naive baseline forecast for a product
-      parameters:
-        - name: product_id
-          in: query
-          required: true
-          schema:
-            type: integer
-        - name: horizon_days
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 7
-      responses:
-        '200':
-          description: Forecast payload with confidence and status
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ForecastResponse'
-        '501':
-          description: Endpoint reserved for future model versions
-
-  /production-recommendations:
-    get:
-      tags: [AI Forecast]
-      summary: Production recommendations placeholder
-      responses:
-        '501':
-          description: Not implemented yet
-
-  /anomalies:
-    get:
-      tags: [AI Forecast]
-      summary: Anomaly detection placeholder
-      responses:
-        '501':
-          description: Not implemented yet
-
-  /segmentation:
-    get:
-      tags: [AI Forecast]
-      summary: Customer or product segmentation placeholder
-      responses:
-        '501':
-          description: Not implemented yet
-
-  /insights:
-    get:
-      tags: [AI Forecast]
-      summary: AI insights placeholder
-      responses:
-        '501':
-          description: Not implemented yet
-
-  /auth/login:
+  /api/auth/login:
     post:
+      summary: Authentification
+      description: |
+        Authentifie un utilisateur par email/mot de passe et renvoie un JWT.
+        Validation Zod (`loginSchema`) : email valide + password non vide.
+        Publique (rate-limit dédié : 100 requêtes / 15 min). Enregistre une action
+        d'audit LOGIN.
       tags: [Auth]
-      summary: Login
+      security: []
       requestBody:
         required: true
         content:
@@ -116,41 +895,105 @@ paths:
                   format: email
                 password:
                   type: string
+                  minLength: 1
+            example:
+              email: admin@bakery.com
+              password: password123
       responses:
         '200':
-          description: Authenticated session returned
+          description: Connexion réussie
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/LoginResponse'
+              example:
+                token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example
+                user:
+                  id: 32
+                  name: Admin Bakery
+                  email: admin@bakery.com
+                  role: ADMIN
+        '400':
+          $ref: '#/components/responses/ValidationError'
         '401':
-          $ref: '#/components/responses/Unauthorized'
+          description: Identifiants invalides
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Invalid credentials.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /auth/me:
-    get:
+  /api/auth/logout:
+    post:
+      summary: Déconnexion
+      description: |
+        Déconnexion d'un utilisateur authentifié. Enregistre une action d'audit
+        LOGOUT. Le token n'est pas révoqué côté serveur (client-side invalidation).
       tags: [Auth]
-      summary: Get current authenticated user
-      security:
-        - bearerAuth: []
       responses:
         '200':
-          description: User profile
+          description: Déconnexion réussie
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: Logged out successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/auth/me:
+    get:
+      summary: Profil de l'utilisateur courant
+      description: Renvoie les informations de l'utilisateur authentifié (id, name, email, role).
+      tags: [Auth]
+      responses:
+        '200':
+          description: Profil de l'utilisateur courant
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
+              example:
+                id: 32
+                name: Admin Bakery
+                email: admin@bakery.com
+                role: ADMIN
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Utilisateur introuvable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: User not found.
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /auth/users:
+  /api/auth/users:
     get:
+      summary: Liste des utilisateurs (ADMIN)
+      description: Renvoie tous les utilisateurs. Réservé au rôle ADMIN.
       tags: [Auth]
-      summary: List all users (ADMIN only)
-      security:
-        - bearerAuth: []
       responses:
         '200':
-          description: User list
+          description: Liste des utilisateurs
           content:
             application/json:
               schema:
@@ -161,123 +1004,47 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
-  /categories:
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/products:
     get:
-      tags: [Categories]
-      summary: List categories
-      responses:
-        '200':
-          description: Categories
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Category'
-    post:
-      tags: [Categories]
-      summary: Create category (ADMIN, PRODUCTION)
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name]
-              properties:
-                name:
-                  type: string
-                description:
-                  type: string
-      responses:
-        '201':
-          description: Category created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Category'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /categories/{id}:
-    put:
-      tags: [Categories]
-      summary: Update category (ADMIN, PRODUCTION)
-      security:
-        - bearerAuth: []
+      summary: Liste des produits
+      description: |
+        Renvoie tous les produits (avec nom de catégorie et recette/ingrédients).
+        Endpoint public (aucun middleware auth dans l'implémentation actuelle).
+        Filtres : category_id, search.
+      tags: [Produits]
+      security: []
       parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-                description:
-                  type: string
+        - name: category_id
+          in: query
+          required: false
+          description: Filtrer par catégorie
+          schema:
+            type: integer
+        - name: search
+          in: query
+          required: false
+          description: Recherche partielle sur le nom
+          schema:
+            type: string
       responses:
         '200':
-          description: Category updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Category'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    delete:
-      tags: [Categories]
-      summary: Delete category (ADMIN)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      responses:
-        '200':
-          description: Category deleted
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SuccessMessage'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /products:
-    get:
-      tags: [Products]
-      summary: List products
-      parameters:
-        - $ref: '#/components/parameters/CategoryIdQuery'
-        - $ref: '#/components/parameters/SearchQuery'
-      responses:
-        '200':
-          description: Product list
+          description: Liste des produits
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/Product'
+        '500':
+          $ref: '#/components/responses/ServerError'
     post:
-      tags: [Products]
-      summary: Create product (ADMIN, PRODUCTION)
-      security:
-        - bearerAuth: []
+      summary: Créer un produit
+      description: |
+        Crée un produit (avec recette optionnelle). Rôles : ADMIN, PRODUCTION.
+        Enregistre une action d'audit CREATE_PRODUCT.
+      tags: [Produits]
       requestBody:
         required: true
         content:
@@ -294,16 +1061,29 @@ paths:
                   type: number
                 category_id:
                   type: integer
-                  nullable: true
                 stock_quantity:
                   type: integer
                 recipe:
                   type: array
                   items:
-                    $ref: '#/components/schemas/RecipeInput'
+                    type: object
+                    properties:
+                      ingredient_id:
+                        type: integer
+                      quantity_required:
+                        type: number
+            example:
+              name: Croissant Pur Beurre
+              description: Viennoiserie au beurre
+              price: 1.3
+              category_id: 23
+              stock_quantity: 60
+              recipe:
+                - ingredient_id: 42
+                  quantity_required: 0.1
       responses:
         '201':
-          description: Product created
+          description: Produit créé
           content:
             application/json:
               schema:
@@ -314,29 +1094,33 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
-  /products/{id}:
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/products/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
     get:
-      tags: [Products]
-      summary: Get product detail
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Détail d'un produit
+      description: Renvoie un produit avec sa recette. Endpoint public.
+      tags: [Produits]
+      security: []
       responses:
         '200':
-          description: Product detail
+          description: Produit trouvé
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Product'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
     put:
-      tags: [Products]
-      summary: Update product (ADMIN, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Modifier un produit
+      description: |
+        Mise à jour partielle d'un produit. Rôles : ADMIN, PRODUCTION.
+        Enregistre une action d'audit UPDATE_PRODUCT.
+      tags: [Produits]
       requestBody:
         required: true
         content:
@@ -352,69 +1136,80 @@ paths:
                   type: number
                 category_id:
                   type: integer
-                  nullable: true
                 stock_quantity:
                   type: integer
                 is_active:
                   type: boolean
+            example:
+              price: 1.4
+              stock_quantity: 55
       responses:
         '200':
-          description: Product updated
+          description: Produit mis à jour
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Product'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
     delete:
-      tags: [Products]
-      summary: Delete product (ADMIN)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Supprimer un produit
+      description: |
+        Supprime un produit. Rôle : ADMIN uniquement.
+        Enregistre une action d'audit DELETE_PRODUCT.
+      tags: [Produits]
       responses:
         '200':
-          description: Product deleted
+          description: Produit supprimé
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessMessage'
+                type: object
+                properties:
+                  message:
+                    type: string
+              example:
+                message: Product 32 deleted successfully.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
-  /products/{id}/recipe:
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/products/{id}/recipe:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
     get:
-      tags: [Products]
-      summary: Get product recipe
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Recette d'un produit
+      description: Renvoie les ingrédients de la recette d'un produit. Endpoint public.
+      tags: [Produits]
+      security: []
       responses:
         '200':
-          description: Recipe items
+          description: Ingrédients de la recette
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/RecipeItem'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
     post:
-      tags: [Products]
-      summary: Set or replace recipe (ADMIN, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Définir / remplacer la recette d'un produit
+      description: |
+        Remplace entièrement les ingrédients de la recette. Rôles : ADMIN, PRODUCTION.
+      tags: [Produits]
       requestBody:
         required: true
         content:
@@ -426,14 +1221,33 @@ paths:
                 items:
                   type: array
                   items:
-                    $ref: '#/components/schemas/RecipeInput'
+                    type: object
+                    required: [ingredient_id, quantity_required]
+                    properties:
+                      ingredient_id:
+                        type: integer
+                      quantity_required:
+                        type: number
+            example:
+              items:
+                - ingredient_id: 42
+                  quantity_required: 0.1
+                - ingredient_id: 43
+                  quantity_required: 0.05
       responses:
         '200':
-          description: Recipe updated
+          description: Recette mise à jour
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecipeUpdateResponse'
+                type: object
+                properties:
+                  message:
+                    type: string
+                  recipe:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RecipeItem'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -442,15 +1256,18 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /products/{id}/produce:
+  /api/products/{id}/produce:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
     post:
-      tags: [Products]
-      summary: Produce product batch (ADMIN, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Produire un lot de produits
+      description: |
+        Déduit les ingrédients selon la recette et incrémente le stock produit fini.
+        Rôles : ADMIN, PRODUCTION. Invalide le cache IA du produit.
+      tags: [Produits]
       requestBody:
         required: true
         content:
@@ -462,41 +1279,191 @@ paths:
                 quantity:
                   type: integer
                   minimum: 1
+            example:
+              quantity: 20
       responses:
         '200':
-          description: Production result
+          description: Production effectuée
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProductionResponse'
+                type: object
+                properties:
+                  message:
+                    type: string
+                  result:
+                    type: object
+                    properties:
+                      product:
+                        $ref: '#/components/schemas/Product'
+                      produced_quantity:
+                        type: integer
+                      updated_ingredients:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Ingredient'
+                      alerts:
+                        type: array
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
-  /ingredients:
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/categories:
     get:
-      tags: [Ingredients]
-      summary: List ingredients
-      parameters:
-        - $ref: '#/components/parameters/SearchQuery'
-        - $ref: '#/components/parameters/IngredientStatusQuery'
+      summary: Liste des catégories
+      description: Renvoie toutes les catégories. Endpoint public.
+      tags: [Catégories]
+      security: []
       responses:
         '200':
-          description: Ingredient list
+          description: Liste des catégories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+                    description:
+                      type: string
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      summary: Créer une catégorie
+      description: "Rôles autorisés : ADMIN, PRODUCTION."
+      tags: [Catégories]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+            example:
+              name: Viennoiserie
+              description: Croissants, pains au chocolat, brioches
+      responses:
+        '201':
+          description: Catégorie créée
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/categories/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    put:
+      summary: Modifier une catégorie
+      description: "Rôles autorisés : ADMIN, PRODUCTION."
+      tags: [Catégories]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '200':
+          description: Catégorie mise à jour
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      summary: Supprimer une catégorie
+      description: Rôle ADMIN uniquement.
+      tags: [Catégories]
+      responses:
+        '200':
+          description: Catégorie supprimée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/ingredients:
+    get:
+      summary: Liste des ingrédients
+      description: |
+        Renvoie tous les ingrédients enrichis (fournisseur, is_low_stock,
+        is_expiring_soon). Filtres : search, status(low_stock|expiring_soon).
+        Endpoint public. Alias identique : /api/stocks.
+      tags: [Stocks]
+      security: []
+      parameters:
+        - name: search
+          in: query
+          required: false
+          description: Recherche partielle sur le nom
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          description: Filtrer par état
+          schema:
+            type: string
+            enum: [low_stock, expiring_soon]
+      responses:
+        '200':
+          description: Liste des ingrédients
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/Ingredient'
+        '500':
+          $ref: '#/components/responses/ServerError'
     post:
-      tags: [Ingredients]
-      summary: Create ingredient (ADMIN, STOCK, PRODUCTION)
-      security:
-        - bearerAuth: []
+      summary: Créer un ingrédient
+      description: "Rôles autorisés : ADMIN, STOCK, PRODUCTION."
+      tags: [Stocks]
       requestBody:
         required: true
         content:
@@ -520,41 +1487,76 @@ paths:
                   format: date
                 supplier_id:
                   type: integer
-                  nullable: true
+            example:
+              name: Farine T45
+              unit: kg
+              current_stock: 100
+              minimum_stock: 10
+              cost_per_unit: 1.2
+              supplier_id: 15
       responses:
         '201':
-          description: Ingredient created
+          description: Ingrédient créé
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Ingredient'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /ingredients/{id}:
+  /api/ingredients/alerts:
     get:
-      tags: [Ingredients]
-      summary: Get ingredient detail
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Alertes de stock
+      description: |
+        Renvoie les alertes stock faible et péremption proche (≤ 7 jours).
+        Endpoint public. Alias identique : /api/stocks/alerts.
+      tags: [Stocks]
+      security: []
       responses:
         '200':
-          description: Ingredient detail with recent movements
+          description: Alertes de stock
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/IngredientDetail'
+                $ref: '#/components/schemas/StockAlerts'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/ingredients/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      summary: Détail d'un ingrédient avec mouvements
+      description: Renvoie un ingrédient et ses 20 derniers mouvements de stock. Endpoint public.
+      tags: [Stocks]
+      security: []
+      responses:
+        '200':
+          description: Ingrédient et mouvements
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ingredient:
+                    $ref: '#/components/schemas/Ingredient'
+                  movements:
+                    type: array
+                    items:
+                      type: object
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
     put:
-      tags: [Ingredients]
-      summary: Update ingredient (ADMIN, STOCK, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Modifier un ingrédient
+      description: "Rôles autorisés : ADMIN, STOCK, PRODUCTION."
+      tags: [Stocks]
       requestBody:
         required: true
         content:
@@ -575,10 +1577,9 @@ paths:
                   format: date
                 supplier_id:
                   type: integer
-                  nullable: true
       responses:
         '200':
-          description: Ingredient updated
+          description: Ingrédient mis à jour
           content:
             application/json:
               schema:
@@ -589,35 +1590,43 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
     delete:
-      tags: [Ingredients]
-      summary: Delete ingredient (ADMIN)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Supprimer un ingrédient
+      description: |
+        Rôle ADMIN uniquement. Refusé si l'ingrédient est utilisé dans une recette.
+      tags: [Stocks]
       responses:
         '200':
-          description: Ingredient deleted
+          description: Ingrédient supprimé
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessMessage'
+                type: object
+                properties:
+                  message:
+                    type: string
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /ingredients/{id}/movement:
+  /api/ingredients/{id}/movement:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
     post:
-      tags: [Ingredients]
-      summary: Apply stock movement (ADMIN, STOCK, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Enregistrer un mouvement de stock
+      description: |
+        Applique un mouvement (IN, OUT, WASTE, ADJUSTMENT) via StockService.
+        Rôles : ADMIN, STOCK, PRODUCTION. Écrit une entrée d'audit STOCK_ADJUSTMENT.
+      tags: [Stocks]
       requestBody:
         required: true
         content:
@@ -627,8 +1636,242 @@ paths:
               required: [movement_type, quantity]
               properties:
                 movement_type:
+                  $ref: '#/components/schemas/StockMovementType'
+                quantity:
+                  type: number
+                reason:
                   type: string
-                  enum: [IN, OUT, WASTE, ADJUSTMENT]
+                expiration_date:
+                  type: string
+                  format: date
+                batch_number:
+                  type: string
+            example:
+              movement_type: IN
+              quantity: 50
+              reason: Réapprovisionnement
+      responses:
+        '200':
+          description: Mouvement enregistré
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  ingredient:
+                    $ref: '#/components/schemas/Ingredient'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/stocks:
+    get:
+      summary: Liste des ingrédients (alias /api/stocks)
+      description: |
+        Alias du routeur ingredients monté sous /api/stocks. Endpoint public.
+        Filtres : search, status(low_stock|expiring_soon).
+      tags: [Stocks]
+      security: []
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [low_stock, expiring_soon]
+      responses:
+        '200':
+          description: Liste des ingrédients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ingredient'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      summary: Créer un ingrédient (alias /api/stocks)
+      description: |
+        Alias de POST /api/ingredients. Rôles : ADMIN, STOCK, PRODUCTION.
+        Enregistre une action d'audit ingredient_create.
+      tags: [Stocks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, unit]
+              properties:
+                name:
+                  type: string
+                unit:
+                  type: string
+                current_stock:
+                  type: number
+                minimum_stock:
+                  type: number
+                cost_per_unit:
+                  type: number
+                expiration_date:
+                  type: string
+                  format: date
+                supplier_id:
+                  type: integer
+      responses:
+        '201':
+          description: Ingrédient créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ingredient'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/stocks/alerts:
+    get:
+      summary: Alertes de stock (alias /api/stocks)
+      description: Alias de GET /api/ingredients/alerts. Endpoint public.
+      tags: [Stocks]
+      security: []
+      responses:
+        '200':
+          description: Alertes stock faible et péremption proche
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockAlerts'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/stocks/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      summary: Détail d'un ingrédient + mouvements (alias /api/stocks)
+      description: Alias de GET /api/ingredients/{id}. Endpoint public.
+      tags: [Stocks]
+      security: []
+      responses:
+        '200':
+          description: Ingrédient et 20 derniers mouvements de stock
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ingredient:
+                    $ref: '#/components/schemas/Ingredient'
+                  movements:
+                    type: array
+                    items:
+                      type: object
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      summary: Modifier un ingrédient (alias /api/stocks)
+      description: "Alias de PUT /api/ingredients/{id}. Rôles : ADMIN, STOCK, PRODUCTION."
+      tags: [Stocks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                unit:
+                  type: string
+                minimum_stock:
+                  type: number
+                cost_per_unit:
+                  type: number
+                expiration_date:
+                  type: string
+                  format: date
+                supplier_id:
+                  type: integer
+      responses:
+        '200':
+          description: Ingrédient mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ingredient'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      summary: Supprimer un ingrédient (alias /api/stocks)
+      description: Alias de DELETE /api/ingredients/{id}. Rôle ADMIN.
+      tags: [Stocks]
+      responses:
+        '200':
+          description: Ingrédient supprimé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/stocks/{id}/movement:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    post:
+      summary: Enregistrer un mouvement de stock (alias /api/stocks)
+      description: |
+        Alias de POST /api/ingredients/{id}/movement.
+        Rôles : ADMIN, STOCK, PRODUCTION. Audit STOCK_ADJUSTMENT.
+      tags: [Stocks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [movement_type, quantity]
+              properties:
+                movement_type:
+                  $ref: '#/components/schemas/StockMovementType'
                 quantity:
                   type: number
                 reason:
@@ -640,117 +1883,60 @@ paths:
                   type: string
       responses:
         '200':
-          description: Stock movement applied
+          description: Mouvement enregistré
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/StockMovementResponse'
+                type: object
+                properties:
+                  message:
+                    type: string
+                  ingredient:
+                    $ref: '#/components/schemas/Ingredient'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /ingredients/alerts:
-    get:
-      tags: [Ingredients]
-      summary: Get stock and expiration alerts
-      responses:
-        '200':
-          description: Alert summary
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AlertSummary'
 
-  /stocks:
+  /api/sales:
     get:
-      tags: [Ingredients]
-      summary: Stock alias for ingredients listing
+      summary: Liste des ventes
+      description: |
+        Renvoie les ventes. Rôles autorisés : ADMIN, CASHIER, PRODUCTION.
+        Filtres query optionnels : period, product_id, start_date, end_date.
+      tags: [Ventes]
       parameters:
-        - $ref: '#/components/parameters/SearchQuery'
-        - $ref: '#/components/parameters/IngredientStatusQuery'
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [day, week, month]
+        - name: product_id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: start_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
       responses:
         '200':
-          description: Ingredient list in stock alias
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Ingredient'
-
-  /stocks/alerts:
-    get:
-      tags: [Ingredients]
-      summary: Stock alias for low-stock and expiration alerts
-      responses:
-        '200':
-          description: Alert summary
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AlertSummary'
-
-  /stocks/{id}:
-    get:
-      tags: [Ingredients]
-      summary: Stock alias detail
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      responses:
-        '200':
-          description: Ingredient detail with movements
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/IngredientDetail'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /stocks/{id}/movement:
-    post:
-      tags: [Ingredients]
-      summary: Stock alias movement endpoint
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/StockMovementRequest'
-      responses:
-        '200':
-          description: Stock movement applied
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StockMovementResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /sales:
-    get:
-      tags: [Sales]
-      summary: List sales (ADMIN, CASHIER, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/PeriodQuery'
-        - $ref: '#/components/parameters/ProductIdQuery'
-        - $ref: '#/components/parameters/StartDateQuery'
-        - $ref: '#/components/parameters/EndDateQuery'
-      responses:
-        '200':
-          description: Sales
+          description: Liste des ventes
           content:
             application/json:
               schema:
@@ -761,20 +1947,47 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
     post:
-      tags: [Sales]
-      summary: Create sale (ADMIN, CASHIER, PRODUCTION)
-      security:
-        - bearerAuth: []
+      summary: Enregistrer une vente
+      description: |
+        Crée une vente avec ses lignes d'items. Décrémente le stock produit fini
+        et les ingrédients selon les recettes. Génère un numéro de reçu.
+        Rôles autorisés : ADMIN, CASHIER, PRODUCTION. Audit CREATE_SALE.
+      tags: [Ventes]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SaleInput'
+              type: object
+              required: [items, payment_method]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [product_id, quantity]
+                    properties:
+                      product_id:
+                        type: integer
+                      quantity:
+                        type: integer
+                        minimum: 1
+                      price:
+                        type: number
+                payment_method:
+                  type: string
+                  enum: [cash, card, mobile, ticket]
+                customer_name:
+                  type: string
+                customer_phone:
+                  type: string
       responses:
         '201':
-          description: Sale created
+          description: Vente créée
           content:
             application/json:
               schema:
@@ -785,21 +1998,42 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /sales/history:
+  /api/sales/history:
     get:
-      tags: [Sales]
-      summary: Sales history
-      security:
-        - bearerAuth: []
+      summary: Historique des ventes
+      description: |
+        Historique détaillé des ventes. Rôles : ADMIN, CASHIER, PRODUCTION.
+        Mêmes filtres que GET /api/sales.
+      tags: [Ventes]
       parameters:
-        - $ref: '#/components/parameters/PeriodQuery'
-        - $ref: '#/components/parameters/ProductIdQuery'
-        - $ref: '#/components/parameters/StartDateQuery'
-        - $ref: '#/components/parameters/EndDateQuery'
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: product_id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: start_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
       responses:
         '200':
-          description: Sales history list
+          description: Historique des ventes
           content:
             application/json:
               schema:
@@ -810,16 +2044,17 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /sales/metrics:
+  /api/sales/metrics:
     get:
-      tags: [Sales]
-      summary: Get sales metrics
-      security:
-        - bearerAuth: []
+      summary: Métriques de vente agrégées
+      description: "Rôles autorisés : ADMIN, CASHIER, PRODUCTION."
+      tags: [Ventes]
       responses:
         '200':
-          description: Sales KPIs
+          description: Chiffre d'affaires et marges par période
           content:
             application/json:
               schema:
@@ -828,60 +2063,67 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /sales/{id}:
+  /api/sales/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
     get:
-      tags: [Sales]
-      summary: Get sale by id
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Détail d'une vente
+      description: "Rôles autorisés : ADMIN, CASHIER, PRODUCTION."
+      tags: [Ventes]
       responses:
         '200':
-          description: Sale detail
+          description: Vente trouvée
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Sale'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: Vente introuvable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /sales/{id}/ticket/html:
+  /api/sales/{id}/ticket/html:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
     get:
-      tags: [Sales]
-      summary: Get printable HTML sale ticket
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Ticket de caisse HTML
+      description: |
+        Génère le ticket de caisse au format HTML pour une vente donnée.
+        Rôles autorisés : ADMIN, CASHIER, PRODUCTION. Retourne du text/html.
+      tags: [Ventes]
       responses:
         '200':
-          description: HTML ticket content
+          description: Document HTML du ticket
           content:
             text/html:
               schema:
                 type: string
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: Vente introuvable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /employees:
+  /api/employees:
     get:
-      tags: [Employees]
-      summary: List employee records
-      security:
-        - bearerAuth: []
+      summary: Liste des employés
+      description: |
+        Liste tous les employés (jointure users). Permission requise :
+        view_profile (tous rôles authentifiés).
+      tags: [Employés]
       responses:
         '200':
-          description: Employee list
+          description: Liste des employés
           content:
             application/json:
               schema:
@@ -890,182 +2132,95 @@ paths:
                   $ref: '#/components/schemas/Employee'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
     post:
-      tags: [Employees]
-      summary: Create employee or link an existing user account (ADMIN)
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/EmployeeInput'
-      responses:
-        '201':
-          description: Employee created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Employee'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /employees/schedules:
-    get:
-      tags: [Employees]
-      summary: List schedules
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Schedule list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Schedule'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-    post:
-      tags: [Employees]
-      summary: Create schedule (ADMIN)
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ScheduleInput'
-      responses:
-        '201':
-          description: Schedule created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Schedule'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /employees/leaves:
-    get:
-      tags: [Employees]
-      summary: List leave requests
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Leave list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Leave'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-    post:
-      tags: [Employees]
-      summary: Create leave request
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LeaveInput'
-      responses:
-        '201':
-          description: Leave created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Leave'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  /employees/leaves/{id}/status:
-    put:
-      tags: [Employees]
-      summary: Update leave status (ADMIN)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Créer un employé
+      description: |
+        Deux modes d'onboarding gérés par le handler.
+        Mode A - lien vers un utilisateur existant : user_id + first_name + last_name.
+        Mode B - création utilisateur + employé : email + password + role + first_name + last_name.
+        Validation Zod createEmployeeSchema. Permission : crud_employee. Audit CREATE_EMPLOYEE.
+      tags: [Employés]
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [status]
+              required: [first_name, last_name]
               properties:
-                status:
+                user_id:
+                  type: integer
+                first_name:
                   type: string
-                  enum: [PENDING, APPROVED, REJECTED]
+                  minLength: 1
+                last_name:
+                  type: string
+                  minLength: 1
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                role:
+                  type: string
+                phone:
+                  type: string
+                job_title:
+                  type: string
+                hire_date:
+                  type: string
+                  format: date
+                address:
+                  type: string
       responses:
-        '200':
-          description: Leave updated
+        '201':
+          description: Employé créé
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Leave'
+                $ref: '#/components/schemas/Employee'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /employees/{id}:
+  /api/employees/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
     get:
-      tags: [Employees]
-      summary: Get employee by id
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Détail d'un employé
+      description: "Permission : view_profile."
+      tags: [Employés]
       responses:
         '200':
-          description: Employee detail
+          description: Employé trouvé
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Employee'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
     put:
-      tags: [Employees]
-      summary: Update employee (ADMIN)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Modifier un employé
+      description: |
+        Mise à jour partielle (patch). Validation Zod updateEmployeeSchema.
+        Vérifie l'unicité du user_id lié et son existence.
+        Permission : crud_employee. Audit UPDATE_EMPLOYEE.
+      tags: [Employés]
       requestBody:
         required: true
         content:
@@ -1090,47 +2245,410 @@ paths:
                   type: string
       responses:
         '200':
-          description: Employee updated
+          description: Employé mis à jour
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Employee'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
     delete:
-      tags: [Employees]
-      summary: Delete employee (ADMIN)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Supprimer un employé
+      description: "Permission : crud_employee."
+      tags: [Employés]
       responses:
         '200':
-          description: Employee deleted
+          description: Employé supprimé
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessMessage'
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /suppliers:
+  /api/employees/profile:
     get:
-      tags: [Suppliers]
-      summary: List suppliers
-      security:
-        - bearerAuth: []
+      summary: Profil de l'employé connecté
+      description: |
+        Profil auto-scopé (employé lié à l'utilisateur JWT).
+        Permission : view_profile. 404 si aucun profil employé lié.
+      tags: [Employés]
       responses:
         '200':
-          description: Supplier list
+          description: Profil de l'employé courant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+        '404':
+          description: Aucun profil employé lié à cet utilisateur
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/employees/hours:
+    get:
+      summary: Heures travaillées de l'employé connecté
+      description: |
+        Résumé des heures (schedules) et congés auto-scopés.
+        Filtres : start_date, end_date. Permission : view_hours.
+      tags: [Employés]
+      parameters:
+        - name: start_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Résumé des heures et congés
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_hours:
+                    type: number
+                  schedules:
+                    type: array
+                    items:
+                      type: object
+                  leaves:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Leave'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/employees/me/profile:
+    put:
+      summary: Modifier son propre profil
+      description: |
+        Mise à jour self-service des champs autorisés (phone, address).
+        Aucune permission spécifique, simple authentification.
+      tags: [Employés]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                phone:
+                  type: string
+                job_title:
+                  type: string
+                hire_date:
+                  type: string
+                  format: date
+                address:
+                  type: string
+      responses:
+        '200':
+          description: Profil mis à jour
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/employees/me/password:
+    put:
+      summary: Changer son propre mot de passe
+      description: Change le mot de passe du compte lié à l'employé connecté.
+      tags: [Employés]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password:
+                  type: string
+                new_password:
+                  type: string
+                  minLength: 6
+      responses:
+        '200':
+          description: Mot de passe modifié
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/employees/schedules:
+    get:
+      summary: Liste des plannings
+      description: "Plannings des employés. Permission : view_schedule."
+      tags: [Employés]
+      responses:
+        '200':
+          description: Liste des plannings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    employee_id:
+                      type: integer
+                    shift_start:
+                      type: string
+                      format: date-time
+                    shift_end:
+                      type: string
+                      format: date-time
+                    notes:
+                      type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      summary: Créer un planning
+      description: "Permission : create_schedule. Audit CREATE_SCHEDULE."
+      tags: [Employés]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [employee_id, shift_start, shift_end]
+              properties:
+                employee_id:
+                  type: integer
+                shift_start:
+                  type: string
+                  format: date-time
+                shift_end:
+                  type: string
+                  format: date-time
+                notes:
+                  type: string
+      responses:
+        '201':
+          description: Planning créé
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/employees/leaves:
+    get:
+      summary: Liste des congés
+      description: "Congés demandés et validés. Permission : view_leave."
+      tags: [Employés]
+      responses:
+        '200':
+          description: Liste des congés
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Leave'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      summary: Créer une demande de congé
+      description: |
+        Crée une demande de congé pour n'importe quel employé.
+        Validation Zod leaveSchema. Permission : create_leave. Audit CREATE_LEAVE.
+      tags: [Employés]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [employee_id, start_date, end_date, leave_type]
+              properties:
+                employee_id:
+                  type: integer
+                start_date:
+                  type: string
+                  format: date
+                end_date:
+                  type: string
+                  format: date
+                leave_type:
+                  type: string
+                  enum: [annual, sick, unpaid, maternity]
+                reason:
+                  type: string
+      responses:
+        '201':
+          description: Demande créée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Leave'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/employees/leaves/me:
+    post:
+      summary: Créer sa propre demande de congé
+      description: |
+        Crée une demande de congé pour l'employé connecté (employee_id déduit du JWT).
+        Simple authentification. Audit CREATE_LEAVE_SELF.
+      tags: [Employés]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [start_date, end_date, leave_type]
+              properties:
+                start_date:
+                  type: string
+                  format: date
+                end_date:
+                  type: string
+                  format: date
+                leave_type:
+                  type: string
+                  enum: [annual, sick, unpaid, maternity]
+                reason:
+                  type: string
+      responses:
+        '201':
+          description: Demande créée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Leave'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/employees/leaves/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    put:
+      summary: Valider ou refuser une demande de congé
+      description: |
+        Change le statut d'une demande de congé (approved ou rejected).
+        Vérifie les conflits de planning avant validation.
+        Permission : approve_leave. Audit UPDATE_LEAVE_STATUS.
+      tags: [Employés]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: '#/components/schemas/LeaveStatus'
+                rejection_reason:
+                  type: string
+      responses:
+        '200':
+          description: Statut mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Leave'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/suppliers:
+    get:
+      summary: Liste des fournisseurs
+      description: "Rôles autorisés : ADMIN, STOCK, PRODUCTION."
+      tags: [Fournisseurs]
+      responses:
+        '200':
+          description: Liste des fournisseurs
           content:
             application/json:
               schema:
@@ -1141,20 +2659,34 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
     post:
-      tags: [Suppliers]
-      summary: Create supplier (ADMIN, STOCK)
-      security:
-        - bearerAuth: []
+      summary: Créer un fournisseur
+      description: "Rôles autorisés : ADMIN, STOCK. Audit CREATE_SUPPLIER."
+      tags: [Fournisseurs]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SupplierInput'
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                contact_name:
+                  type: string
+                phone:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                address:
+                  type: string
       responses:
         '201':
-          description: Supplier created
+          description: Fournisseur créé
           content:
             application/json:
               schema:
@@ -1165,113 +2697,127 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /suppliers/{id}:
+  /api/suppliers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
     get:
-      tags: [Suppliers]
-      summary: Get supplier detail with order/performance data
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Détail d'un fournisseur avec ses ingrédients et commandes
+      description: |
+        Renvoie le fournisseur, ses ingrédients associés et l'historique de
+        performance de ses commandes. Rôles : ADMIN, STOCK, PRODUCTION.
+      tags: [Fournisseurs]
       responses:
         '200':
-          description: Supplier detail
+          description: Fournisseur trouvé
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SupplierDetail'
+                type: object
+                properties:
+                  supplier:
+                    $ref: '#/components/schemas/Supplier'
+                  ingredients:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Ingredient'
+                  purchase_orders:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PurchaseOrder'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
     put:
-      tags: [Suppliers]
-      summary: Update supplier (ADMIN, STOCK)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Modifier un fournisseur
+      description: "Rôles autorisés : ADMIN, STOCK. Audit UPDATE_SUPPLIER."
+      tags: [Fournisseurs]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SupplierInput'
+              type: object
+              properties:
+                name:
+                  type: string
+                contact_name:
+                  type: string
+                phone:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                address:
+                  type: string
       responses:
         '200':
-          description: Supplier updated
+          description: Fournisseur mis à jour
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Supplier'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
     delete:
-      tags: [Suppliers]
-      summary: Delete supplier (ADMIN)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Supprimer un fournisseur
+      description: |
+        Rôle ADMIN uniquement. Refusé si des ingrédients sont rattachés
+        à ce fournisseur. Audit DELETE_SUPPLIER.
+      tags: [Fournisseurs]
       responses:
         '200':
-          description: Supplier deleted
+          description: Fournisseur supprimé
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessMessage'
+                type: object
+                properties:
+                  message:
+                    type: string
         '400':
           $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
-  /purchase-orders:
-    post:
-      tags: [Purchase Orders]
-      summary: Create supplier purchase order (ADMIN, STOCK)
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PurchaseOrderInput'
-      responses:
-        '201':
-          description: Purchase order created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PurchaseOrder'
-        '400':
-          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/purchase-orders:
     get:
-      tags: [Purchase Orders]
-      summary: List purchase orders
-      security:
-        - bearerAuth: []
+      summary: Liste des commandes fournisseur
+      description: "Rôles autorisés : ADMIN, STOCK, PRODUCTION. Filtres query : status, supplier_id."
+      tags: [Commandes]
       parameters:
-        - $ref: '#/components/parameters/StatusQuery'
-        - $ref: '#/components/parameters/SupplierIdQuery'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/PurchaseOrderStatus'
+        - name: supplier_id
+          in: query
+          required: false
+          schema:
+            type: integer
       responses:
         '200':
-          description: Purchase orders
+          description: Liste des commandes fournisseur
           content:
             application/json:
               schema:
@@ -1282,87 +2828,161 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
-  /purchase-orders/{id}:
-    get:
-      tags: [Purchase Orders]
-      summary: Get purchase order detail
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      responses:
-        '200':
-          description: Purchase order detail
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PurchaseOrder'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    put:
-      tags: [Purchase Orders]
-      summary: Update draft purchase order (ADMIN, STOCK)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      summary: Créer une commande fournisseur
+      description: |
+        Crée une commande fournisseur au statut DRAFT via OrderService.
+        Rôles : ADMIN, STOCK. Audit CREATE_ORDER.
+      tags: [Commandes]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PurchaseOrderInput'
+              type: object
+              required: [supplier_id, items]
+              properties:
+                supplier_id:
+                  type: integer
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [ingredient_id, quantity_ordered]
+                    properties:
+                      ingredient_id:
+                        type: integer
+                      quantity_ordered:
+                        type: number
+                      unit_cost:
+                        type: number
       responses:
-        '200':
-          description: Purchase order updated
+        '201':
+          description: Commande créée en DRAFT
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PurchaseOrder'
         '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    delete:
-      tags: [Purchase Orders]
-      summary: Delete draft purchase order (ADMIN)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      responses:
-        '200':
-          description: Purchase order deleted
+          description: Fournisseur ou ingrédient introuvable, payload invalide
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessMessage'
-        '400':
-          $ref: '#/components/responses/BadRequest'
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/purchase-orders/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      summary: Détail d'une commande fournisseur
+      description: "Rôles autorisés : ADMIN, STOCK, PRODUCTION."
+      tags: [Commandes]
+      responses:
+        '200':
+          description: Commande trouvée avec ses lignes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
         '404':
           $ref: '#/components/responses/NotFound'
-
-  /purchase-orders/{id}/status:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
     put:
-      tags: [Purchase Orders]
-      summary: Update purchase-order status (ADMIN, STOCK)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Modifier une commande fournisseur DRAFT
+      description: |
+        Recrée les lignes de la commande (delete + insert). Seule une commande
+        DRAFT peut être modifiée. Rôles autorisés : ADMIN, STOCK.
+      tags: [Commandes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                supplier_id:
+                  type: integer
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      ingredient_id:
+                        type: integer
+                      quantity_ordered:
+                        type: number
+                      unit_cost:
+                        type: number
+      responses:
+        '200':
+          description: Commande mise à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '400':
+          description: Statut non modifiable (seul DRAFT est éditable)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      summary: Supprimer une commande fournisseur DRAFT
+      description: Rôle ADMIN uniquement. Seule une commande DRAFT peut être supprimée.
+      tags: [Commandes]
+      responses:
+        '200':
+          description: Commande supprimée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/purchase-orders/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    put:
+      summary: Changer le statut d'une commande fournisseur
+      description: |
+        Transition DRAFT vers ORDERED puis RECEIVED (réception qui réapprovisionne
+        le stock matières premières et invalide tous les caches IA), ou CANCELLED.
+        Rôles autorisés : ADMIN, STOCK. Audit RECEIVE_ORDER sur réception.
+      tags: [Commandes]
       requestBody:
         required: true
         content:
@@ -1372,60 +2992,45 @@ paths:
               required: [status]
               properties:
                 status:
-                  type: string
-                  enum: [DRAFT, ORDERED, RECEIVED, CANCELLED]
+                  $ref: '#/components/schemas/PurchaseOrderStatus'
       responses:
         '200':
-          description: Status updated
+          description: Statut mis à jour
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PurchaseOrder'
         '400':
           $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
-  /customer-orders:
-    post:
-      tags: [Customer Orders]
-      summary: Create customer order (ADMIN, CASHIER)
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CustomerOrderInput'
-      responses:
-        '201':
-          description: Customer order created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CustomerOrder'
-        '400':
-          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/customer-orders:
     get:
-      tags: [Customer Orders]
-      summary: List customer orders
-      security:
-        - bearerAuth: []
+      summary: Liste des commandes client spéciales
+      description: "Rôles autorisés : ADMIN, CASHIER, PRODUCTION. Filtres query : status, delivery_date."
+      tags: [Commandes]
       parameters:
-        - $ref: '#/components/parameters/StatusQuery'
-        - $ref: '#/components/parameters/DeliveryDateQuery'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/CustomerOrderStatus'
+        - name: delivery_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
       responses:
         '200':
-          description: Customer orders
+          description: Liste des commandes client
           content:
             application/json:
               schema:
@@ -1436,87 +3041,171 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-
-  /customer-orders/{id}:
-    get:
-      tags: [Customer Orders]
-      summary: Get customer order detail
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      responses:
-        '200':
-          description: Customer order detail
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CustomerOrder'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    put:
-      tags: [Customer Orders]
-      summary: Update pending customer order (ADMIN, CASHIER)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      summary: Créer une commande client spéciale
+      description: |
+        Crée une commande personnalisée au statut PENDING (prix recalculé côté
+        serveur à partir du catalogue produits). Rôles autorisés : ADMIN, CASHIER.
+      tags: [Commandes]
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CustomerOrderInput'
+              type: object
+              required: [customer_name, delivery_date, items]
+              properties:
+                customer_name:
+                  type: string
+                customer_phone:
+                  type: string
+                delivery_date:
+                  type: string
+                  format: date-time
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [product_id, quantity]
+                    properties:
+                      product_id:
+                        type: integer
+                      quantity:
+                        type: integer
+                        minimum: 1
+                special_instructions:
+                  type: string
       responses:
-        '200':
-          description: Customer order updated
+        '201':
+          description: Commande créée en PENDING
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CustomerOrder'
         '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    delete:
-      tags: [Customer Orders]
-      summary: Delete pending customer order (ADMIN)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      responses:
-        '200':
-          description: Customer order deleted
+          description: Produit introuvable ou payload invalide
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessMessage'
-        '400':
-          $ref: '#/components/responses/BadRequest'
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/customer-orders/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    get:
+      summary: Détail d'une commande client
+      description: "Rôles autorisés : ADMIN, CASHIER, PRODUCTION."
+      tags: [Commandes]
+      responses:
+        '200':
+          description: Commande trouvée avec ses lignes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerOrder'
         '404':
           $ref: '#/components/responses/NotFound'
-
-  /customer-orders/{id}/status:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
     put:
-      tags: [Customer Orders]
-      summary: Update customer-order status (ADMIN, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
+      summary: Modifier une commande client PENDING
+      description: |
+        Recrée les lignes et recalcule le prix total. Seule une commande PENDING
+        peut être modifiée. Rôles autorisés : ADMIN, CASHIER.
+      tags: [Commandes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                customer_name:
+                  type: string
+                customer_phone:
+                  type: string
+                delivery_date:
+                  type: string
+                  format: date-time
+                items:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      product_id:
+                        type: integer
+                      quantity:
+                        type: integer
+                special_instructions:
+                  type: string
+      responses:
+        '200':
+          description: Commande mise à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerOrder'
+        '400':
+          description: Statut non modifiable (seul PENDING est éditable)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      summary: Supprimer une commande client PENDING
+      description: Rôle ADMIN uniquement. Seule une commande PENDING peut être supprimée.
+      tags: [Commandes]
+      responses:
+        '200':
+          description: Commande supprimée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/customer-orders/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    put:
+      summary: Changer le statut d'une commande client
+      description: |
+        Transition du cycle de production de la commande (PENDING, IN_PRODUCTION,
+        READY, DELIVERED, CANCELLED). Rôles autorisés : ADMIN, PRODUCTION.
+      tags: [Commandes]
       requestBody:
         required: true
         content:
@@ -1526,1315 +3215,501 @@ paths:
               required: [status]
               properties:
                 status:
-                  type: string
-                  enum: [PENDING, IN_PRODUCTION, READY, DELIVERED, CANCELLED]
+                  $ref: '#/components/schemas/CustomerOrderStatus'
       responses:
         '200':
-          description: Order status updated
+          description: Statut mis à jour
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CustomerOrder'
         '400':
           $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
-
-  /analytics/export:
-    get:
-      tags: [Analytics]
-      summary: Export consolidated analytics dataset (ADMIN)
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Analytics export payload
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AnalyticsExport'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-
-  parameters:
-    IdParam:
-      name: id
-      in: path
-      required: true
-      schema:
-        type: integer
-    SearchQuery:
-      name: search
-      in: query
-      required: false
-      schema:
-        type: string
-    CategoryIdQuery:
-      name: category_id
-      in: query
-      required: false
-      schema:
-        type: integer
-    ProductIdQuery:
-      name: product_id
-      in: query
-      required: false
-      schema:
-        type: integer
-    IngredientStatusQuery:
-      name: status
-      in: query
-      required: false
-      schema:
-        type: string
-        enum: [low_stock, expiring_soon]
-    PeriodQuery:
-      name: period
-      in: query
-      required: false
-      schema:
-        type: string
-        enum: [day, week, month]
-    StartDateQuery:
-      name: start_date
-      in: query
-      required: false
-      schema:
-        type: string
-        format: date
-    EndDateQuery:
-      name: end_date
-      in: query
-      required: false
-      schema:
-        type: string
-        format: date
-    StatusQuery:
-      name: status
-      in: query
-      required: false
-      schema:
-        type: string
-    SupplierIdQuery:
-      name: supplier_id
-      in: query
-      required: false
-      schema:
-        type: integer
-    DeliveryDateQuery:
-      name: delivery_date
-      in: query
-      required: false
-      schema:
-        type: string
-        format: date
-
-  responses:
-    Unauthorized:
-      description: Authentication required or token invalid
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    Forbidden:
-      description: User lacks required role
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    NotFound:
-      description: Resource not found
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    BadRequest:
-      description: Invalid request payload or business rule violation
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-
-  schemas:
-    Error:
-      type: object
-      properties:
-        error:
-          type: string
-        status:
-          type: integer
-          nullable: true
-      required: [error]
-
-    SuccessMessage:
-      type: object
-      properties:
-        message:
-          type: string
-
-    HealthStatus:
-      type: object
-      properties:
-        status:
-          type: string
-          example: UP
-        timestamp:
-          type: string
-          format: date-time
-        service:
-          type: string
-        walking_skeleton:
-          type: boolean
-        sprint1:
-          type: boolean
-
-    ForecastResponse:
-      type: object
-      required: [value, confidence, status]
-      properties:
-        value:
-          type: number
-          nullable: true
-        confidence:
-          type: object
-          required: [level, interval]
-          properties:
-            level:
-              type: string
-              enum: [haute, moyenne, faible]
-            interval:
-              type: array
-              items:
-                type: number
-              minItems: 2
-              maxItems: 2
-        status:
-          type: string
-          enum: [ok, insufficient_data]
-
-    User:
-      type: object
-      properties:
-        id:
-          type: integer
-        name:
-          type: string
-        email:
-          type: string
-          format: email
-        role:
-          type: string
-          enum: [ADMIN, EMPLOYEE, STOCK, PRODUCTION, CASHIER]
-
-    LoginResponse:
-      type: object
-      properties:
-        token:
-          type: string
-        user:
-          $ref: '#/components/schemas/User'
-
-    Category:
-      type: object
-      properties:
-        id:
-          type: integer
-        name:
-          type: string
-        description:
-          type: string
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-          nullable: true
-        updated_at:
-          type: string
-          format: date-time
-          nullable: true
-
-    RecipeInput:
-      type: object
-      required: [ingredient_id, quantity_required]
-      properties:
-        ingredient_id:
-          type: integer
-        quantity_required:
-          type: number
-
-    RecipeItem:
-      type: object
-      properties:
-        recipe_item_id:
-          type: integer
-        ingredient_id:
-          type: integer
-        ingredient_name:
-          type: string
-        unit:
-          type: string
-        quantity_required:
-          type: number
-
-    Product:
-      type: object
-      properties:
-        id:
-          type: integer
-        name:
-          type: string
-        description:
-          type: string
-          nullable: true
-        price:
-          type: number
-        category_id:
-          type: integer
-          nullable: true
-        category_name:
-          type: string
-          nullable: true
-        stock_quantity:
-          type: integer
-        is_active:
-          type: boolean
-        ingredients:
-          type: array
-          items:
-            $ref: '#/components/schemas/RecipeItem'
-
-    RecipeUpdateResponse:
-      type: object
-      properties:
-        message:
-          type: string
-        recipe:
-          type: array
-          items:
-            $ref: '#/components/schemas/RecipeItem'
-
-    ProductionResponse:
-      type: object
-      properties:
-        message:
-          type: string
-        result:
-          type: object
-          properties:
-            product:
-              $ref: '#/components/schemas/Product'
-            produced_quantity:
-              type: integer
-            updated_ingredients:
-              type: array
-              items:
-                $ref: '#/components/schemas/Ingredient'
-            alerts:
-              type: array
-              items:
-                $ref: '#/components/schemas/Ingredient'
-
-    Ingredient:
-      type: object
-      properties:
-        id:
-          type: integer
-        name:
-          type: string
-        unit:
-          type: string
-        current_stock:
-          type: number
-        minimum_stock:
-          type: number
-        cost_per_unit:
-          type: number
-        expiration_date:
-          type: string
-          format: date
-          nullable: true
-        supplier_id:
-          type: integer
-          nullable: true
-        supplier_name:
-          type: string
-          nullable: true
-        is_low_stock:
-          type: boolean
-          nullable: true
-        is_expiring_soon:
-          type: boolean
-          nullable: true
-
-    StockMovement:
-      type: object
-      properties:
-        id:
-          type: integer
-        ingredient_id:
-          type: integer
-        movement_type:
-          type: string
-        quantity:
-          type: number
-        reason:
-          type: string
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        batch_number:
-          type: string
-          nullable: true
-
-    IngredientDetail:
-      type: object
-      properties:
-        ingredient:
-          $ref: '#/components/schemas/Ingredient'
-        movements:
-          type: array
-          items:
-            $ref: '#/components/schemas/StockMovement'
-
-    StockMovementRequest:
-      type: object
-      required: [movement_type, quantity]
-      properties:
-        movement_type:
-          type: string
-          enum: [IN, OUT, WASTE, ADJUSTMENT]
-        quantity:
-          type: number
-        reason:
-          type: string
-        expiration_date:
-          type: string
-          format: date
-        batch_number:
-          type: string
-
-    StockMovementResponse:
-      type: object
-      properties:
-        message:
-          type: string
-        ingredient:
-          $ref: '#/components/schemas/Ingredient'
-
-    AlertSummary:
-      type: object
-      properties:
-        low_stock_count:
-          type: integer
-        expiring_soon_count:
-          type: integer
-        low_stock:
-          type: array
-          items:
-            $ref: '#/components/schemas/Ingredient'
-        expiring_soon:
-          type: array
-          items:
-            $ref: '#/components/schemas/Ingredient'
-
-    SaleItem:
-      type: object
-      properties:
-        product_id:
-          type: integer
-        quantity:
-          type: integer
-        unit_price:
-          type: number
-        subtotal:
-          type: number
-
-    SaleInput:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/SaleItem'
-        paymentMethod:
-          type: string
-        customerName:
-          type: string
-          nullable: true
-        customerPhone:
-          type: string
-          nullable: true
-
-    Sale:
-      type: object
-      properties:
-        id:
-          type: integer
-        cashier_id:
-          type: integer
-        total_amount:
-          type: number
-        status:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        payment_method:
-          type: string
-          nullable: true
-        customer_name:
-          type: string
-          nullable: true
-        customer_phone:
-          type: string
-          nullable: true
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/SaleItem'
-
-    SalesMetrics:
-      type: object
-      additionalProperties: true
-
-    Employee:
-      type: object
-      properties:
-        id:
-          type: integer
-        user_id:
-          type: integer
-        user_name:
-          type: string
-          nullable: true
-        user_email:
-          type: string
-          format: email
-          nullable: true
-        user_role:
-          type: string
-          nullable: true
-        first_name:
-          type: string
-        last_name:
-          type: string
-        phone:
-          type: string
-          nullable: true
-        job_title:
-          type: string
-          nullable: true
-        hire_date:
-          type: string
-          format: date
-          nullable: true
-        address:
-          type: string
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-          nullable: true
-        updated_at:
-          type: string
-          format: date-time
-          nullable: true
-
-    EmployeeInput:
-      type: object
-      required: [first_name, last_name]
-      properties:
-        user_id:
-          type: integer
-          nullable: true
-        first_name:
-          type: string
-        last_name:
-          type: string
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-        role:
-          type: string
-        phone:
-          type: string
-        job_title:
-          type: string
-        hire_date:
-          type: string
-          format: date
-        address:
-          type: string
-
-    Schedule:
-      type: object
-      properties:
-        id:
-          type: integer
-        employee_id:
-          type: integer
-        shift_start:
-          type: string
-          format: date-time
-        shift_end:
-          type: string
-          format: date-time
-        notes:
-          type: string
-          nullable: true
-        employee_first_name:
-          type: string
-          nullable: true
-        employee_last_name:
-          type: string
-          nullable: true
-
-    ScheduleInput:
-      type: object
-      required: [employee_id, shift_start, shift_end]
-      properties:
-        employee_id:
-          type: integer
-        shift_start:
-          type: string
-          format: date-time
-        shift_end:
-          type: string
-          format: date-time
-        notes:
-          type: string
-
-    Leave:
-      type: object
-      properties:
-        id:
-          type: integer
-        employee_id:
-          type: integer
-        start_date:
-          type: string
-          format: date
-        end_date:
-          type: string
-          format: date
-        reason:
-          type: string
-          nullable: true
-        status:
-          type: string
-        employee_first_name:
-          type: string
-          nullable: true
-        employee_last_name:
-          type: string
-          nullable: true
-
-    LeaveInput:
-      type: object
-      required: [employee_id, start_date, end_date]
-      properties:
-        employee_id:
-          type: integer
-        start_date:
-          type: string
-          format: date
-        end_date:
-          type: string
-          format: date
-        reason:
-          type: string
-        status:
-          type: string
-          enum: [PENDING, APPROVED, REJECTED]
-
-    Supplier:
-      type: object
-      properties:
-        id:
-          type: integer
-        name:
-          type: string
-        contact_person:
-          type: string
-          nullable: true
-        email:
-          type: string
-          format: email
-          nullable: true
-        phone:
-          type: string
-          nullable: true
-        address:
-          type: string
-          nullable: true
-        lead_time:
-          type: string
-          nullable: true
-        quality:
-          type: string
-          nullable: true
-        rating:
-          type: number
-          nullable: true
-
-    SupplierInput:
-      type: object
-      required: [name]
-      properties:
-        name:
-          type: string
-        contact_person:
-          type: string
-        email:
-          type: string
-          format: email
-        phone:
-          type: string
-        address:
-          type: string
-        lead_time:
-          type: string
-        quality:
-          type: string
-        rating:
-          type: number
-
-    SupplierDetail:
-      type: object
-      allOf:
-        - $ref: '#/components/schemas/Supplier'
-      properties:
-        purchase_orders:
-          type: array
-          items:
-            $ref: '#/components/schemas/PurchaseOrder'
-        performance:
-          type: object
-          properties:
-            purchase_orders:
-              type: integer
-            total_spend:
-              type: number
-            ingredients_count:
-              type: integer
-        ingredients:
-          type: array
-          items:
-            $ref: '#/components/schemas/Ingredient'
-
-    PurchaseOrderItem:
-      type: object
-      properties:
-        id:
-          type: integer
-        purchase_order_id:
-          type: integer
-        ingredient_id:
-          type: integer
-        quantity_ordered:
-          type: number
-        unit_cost:
-          type: number
-
-    PurchaseOrderInput:
-      type: object
-      required: [supplier_id, items]
-      properties:
-        supplier_id:
-          type: integer
-        items:
-          type: array
-          items:
-            type: object
-            required: [ingredient_id, quantity_ordered, unit_cost]
-            properties:
-              ingredient_id:
-                type: integer
-              quantity_ordered:
-                type: number
-              unit_cost:
-                type: number
-
-    PurchaseOrder:
-      type: object
-      properties:
-        id:
-          type: integer
-        supplier_id:
-          type: integer
-        status:
-          type: string
-        total_cost:
-          type: number
-        created_by:
-          type: integer
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-          nullable: true
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/PurchaseOrderItem'
-
-    CustomerOrderItem:
-      type: object
-      properties:
-        id:
-          type: integer
-        customer_order_id:
-          type: integer
-        product_id:
-          type: integer
-        quantity:
-          type: integer
-        unit_price:
-          type: number
-        subtotal:
-          type: number
-
-    CustomerOrderInput:
-      type: object
-      required: [customer_name, customer_phone, delivery_date, items]
-      properties:
-        customer_name:
-          type: string
-        customer_phone:
-          type: string
-        delivery_date:
-          type: string
-          format: date
-        items:
-          type: array
-          items:
-            type: object
-            required: [product_id, quantity]
-            properties:
-              product_id:
-                type: integer
-              quantity:
-                type: integer
-        special_instructions:
-          type: string
-          nullable: true
-
-    CustomerOrder:
-      type: object
-      properties:
-        id:
-          type: integer
-        customer_name:
-          type: string
-        customer_phone:
-          type: string
-        delivery_date:
-          type: string
-          format: date
-        status:
-          type: string
-        total_price:
-          type: number
-        special_instructions:
-          type: string
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/CustomerOrderItem'
-
-    AnalyticsExport:
-      type: object
-      additionalProperties: true
-
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    delete:
-      tags: [Products]
-      summary: Delete product (ADMIN)
-      security:
-        - bearerAuth: []
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      responses:
-        '200': { description: Product deleted }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-/products/{id}/recipe:
+  /api/notifications:
     get:
-      tags: [Products]
-      summary: Get a product recipe (public)
+      summary: Liste des notifications filtrées par RBAC
+      description: |
+        Renvoie les notifications visibles par l'utilisateur connecté, filtrées
+        par son rôle. Filtres query : unread(true), module, category, limit.
+      tags: [Notifications]
       parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
+        - name: unread
+          in: query
+          required: false
+          description: true pour ne retourner que les non lues
+          schema:
+            type: string
+            enum: ['true', 'false']
+        - name: module
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
       responses:
         '200':
-          description: Recipe items
+          description: Liste des notifications
           content:
             application/json:
               schema:
                 type: array
-                items: { $ref: '#/components/schemas/RecipeItem' }
-    post:
-      tags: [Products]
-      summary: Set / replace a product recipe (ADMIN, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
                 items:
-                  type: array
-                  items: { $ref: '#/components/schemas/RecipeInput' }
-      responses:
-        '200':
-          description: Recipe updated
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message: { type: string }
-                  recipe:
-                    type: array
-                    items: { $ref: '#/components/schemas/RecipeItem' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
+                  $ref: '#/components/schemas/Notification'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /products/{id}/produce:
-    post:
-      tags: [Products]
-      summary: Produce a batch (deducts ingredient stock atomically) (ADMIN, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [quantity]
-              properties:
-                quantity: { type: integer, minimum: 1 }
+  /api/notifications/unread-count:
+    get:
+      summary: Nombre de notifications non lues
+      description: Compteur des notifications non lues visibles par l'utilisateur courant.
+      tags: [Notifications]
       responses:
         '200':
-          description: Production completed; ingredients updated
+          description: Compteur de non lues
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  message: { type: string }
-                  result:
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/notifications/read-all:
+    put:
+      summary: Marquer toutes les notifications comme lues
+      description: Marque toutes les notifications de l'utilisateur courant comme lues.
+      tags: [Notifications]
+      responses:
+        '200':
+          description: Toutes marquées comme lues
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/notifications/{id}/read:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    put:
+      summary: Marquer une notification comme lue
+      description: Marque une seule notification comme lue (propriétaire uniquement).
+      tags: [Notifications]
+      responses:
+        '200':
+          description: Notification marquée comme lue
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/notifications/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    delete:
+      summary: Supprimer une notification
+      description: Supprime une notification (propriétaire uniquement).
+      tags: [Notifications]
+      responses:
+        '200':
+          description: Notification supprimée
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/dashboard/summary:
+    get:
+      summary: Synthèse stratégique du tableau de bord
+      description: |
+        Sprint 5 - Dashboard stratégique ADMIN. Agrège les KPIs issus des
+        services existants (SalesService, StockService) et les sorties IA déjà
+        disponibles (/ai/*), sans recalcul. Cache mémoire de 5 minutes (TTL).
+        Rôle autorisé : ADMIN uniquement.
+      tags: [Dashboard]
+      responses:
+        '200':
+          description: Synthèse consolidée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/analytics/export:
+    get:
+      summary: Export consolidé pour la phase IA et analytique
+      description: |
+        Jeu de données historique consolidé (ventes, stocks, produits) destiné
+        à la phase IA et analytique. Lecture seule. Rôle autorisé : ADMIN.
+      tags: [Analytics]
+      responses:
+        '200':
+          description: Jeu de données consolidé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at:
+                    type: string
+                    format: date-time
+                  data:
+                    type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/audit-logs:
+    get:
+      summary: Journal des actions (audit)
+      description: |
+        Récupère les journaux d'audit avec pagination et filtres (action,
+        entity_type, user_id, start_date, end_date, page, limit).
+        Rôle autorisé : ADMIN. Alias identique sans préfixe /api : /audit-logs.
+      tags: [Audit Logs]
+      parameters:
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: entity_type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: start_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Journaux paginés
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /ai/health:
+    get:
+      summary: Santé du service IA (proxy FastAPI)
+      description: |
+        Proxy inverse Express vers GET /health du service IA FastAPI.
+        Le routeur /ai impose requireAuth sur tous ses endpoints, y compris
+        celui-ci. Réponse du service : status ok et nom du service.
+      tags: [IA]
+      responses:
+        '200':
+          description: Service IA opérationnel
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: bakery-ai-service
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          description: Service IA injoignable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  status:
+                    type: integer
+
+  /ai/forecast:
+    get:
+      summary: Prévision de demande pour un produit
+      description: |
+        Sprint 1 - endpoint IA actif. Renvoie la prévision de demande pour un
+        produit avec niveau de confiance et version du modèle. Résultat mis en
+        cache (product_id + horizon + model_version).
+        Rôles autorisés : ADMIN, PRODUCTION, STOCK. Refusés (403) : CASHIER, EMPLOYEE.
+      tags: [IA]
+      parameters:
+        - name: product_id
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: horizon_days
+          in: query
+          required: false
+          description: Horizon de prévision en jours (défaut 7)
+          schema:
+            type: integer
+            default: 7
+      responses:
+        '200':
+          description: Prévision calculée ou en cache
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForecastResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /ai/production-recommendations:
+    get:
+      summary: Recommandations de production
+      description: |
+        Recommandations de production par produit (quantité à produire, raison,
+        confiance). Rôles autorisés : ADMIN, PRODUCTION. Refusés (403) : STOCK,
+        CASHIER, EMPLOYEE.
+      tags: [IA]
+      parameters:
+        - name: product_id
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: horizon_days
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 7
+      responses:
+        '200':
+          description: Recommandation de production
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductionRecommendation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /ai/anomalies:
+    get:
+      summary: Détection d'anomalies de stock
+      description: |
+        Sprint 3 - anomalies orientées stock (ruptures, chutes de ventes,
+        péremptions). Rôles autorisés : ADMIN, STOCK. Refusés (403) :
+        PRODUCTION, CASHIER, EMPLOYEE.
+      tags: [IA]
+      responses:
+        '200':
+          description: Anomalies détectées
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnomalyResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /ai/segmentation:
+    get:
+      summary: Segmentation des produits
+      description: |
+        Segmentation des produits pour décisions tarifaires et promotionnelles.
+        Rôle autorisé : ADMIN (seul rôle décisionnel stratégique).
+        Refusés (403) : PRODUCTION, STOCK, CASHIER, EMPLOYEE.
+      tags: [IA]
+      responses:
+        '200':
+          description: Segments produits
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SegmentationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /ai/insights:
+    get:
+      summary: Insights business consolidés
+      description: |
+        Insights agrégés issus de la segmentation. Rôles autorisés : ADMIN.
+        Refusés (403) : PRODUCTION, STOCK, CASHIER, EMPLOYEE.
+      tags: [IA]
+      responses:
+        '200':
+          description: Insights business
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /ai/etl/run:
+    post:
+      summary: Lancer le pipeline ETL IA
+      description: |
+        Exécute l'extraction et le stockage du jeu de données historique
+        (extract_and_store_etl) puis invalide tous les caches de prévision.
+        Rôle autorisé : ADMIN uniquement.
+      tags: [IA]
+      responses:
+        '200':
+          description: ETL exécuté
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  value:
+                    description: Résultat renvoyé par le pipeline ETL
+                  confidence:
                     type: object
                     properties:
-                      product: { $ref: '#/components/schemas/Product' }
-                      produced_quantity: { type: integer }
-                      updated_ingredients:
+                      level:
+                        type: string
+                      interval:
                         type: array
-                        items: { $ref: '#/components/schemas/Ingredient' }
-                      alerts:
-                        type: array
-                        items: { $ref: '#/components/schemas/Ingredient' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+                        items:
+                          type: number
+                  status:
+                    type: string
+                    example: ok
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
-  /ingredients:
-    get:
-      tags: [Ingredients]
-      summary: List ingredients with stock + alert flags (public)
-      parameters:
-        - { name: search, in: query, required: false, schema: { type: string } }
-        - { name: status, in: query, required: false, schema: { type: string, enum: [low_stock, expiring_soon] } }
-      responses:
-        '200':
-          description: List of ingredients
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Ingredient' }
+  /ai/cache/invalidate:
     post:
-      tags: [Ingredients]
-      summary: Create ingredient (ADMIN, STOCK, PRODUCTION)
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, unit]
-              properties:
-                name: { type: string }
-                unit: { type: string }
-                current_stock: { type: number }
-                minimum_stock: { type: number }
-                cost_per_unit: { type: number }
-                expiration_date: { type: string, format: date }
-                supplier_id: { type: integer, nullable: true }
-      responses:
-        '201':
-          description: Ingredient created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Ingredient' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-/ingredients/alerts:
-    get:
-      tags: [Ingredients]
-      summary: Global low-stock / expiring alerts (public)
+      summary: Invalider les caches IA
+      description: |
+        Invalide les caches des endpoints IA (forecast, production-recommendations,
+        segmentation, insights). Paramètre optionnel product_id pour cibler un
+        produit. Rejoint le service IA via le proxy fallback (authentification
+        requise, sans restriction de rôle explicite côté Express).
+      tags: [IA]
+      parameters:
+        - name: product_id
+          in: query
+          required: false
+          description: Cible un produit précis, sinon invalide tout
+          schema:
+            type: integer
       responses:
         '200':
-          description: Alert summary
+          description: Caches invalidés
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  low_stock_count: { type: integer }
-                  expiring_soon_count: { type: integer }
-                  low_stock:
-                    type: array
-                    items: { $ref: '#/components/schemas/Ingredient' }
-                  expiring_soon:
-                    type: array
-                    items: { $ref: '#/components/schemas/Ingredient' }
-
-  /ingredients/{id}:
-    get:
-      tags: [Ingredients]
-      summary: Get ingredient + recent movements (public)
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      responses:
-        '200':
-          description: Ingredient detail
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ingredient: { $ref: '#/components/schemas/Ingredient' }
-                  movements:
-                    type: array
-                    items: { $ref: '#/components/schemas/StockMovement' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    put:
-      tags: [Ingredients]
-      summary: Update ingredient (ADMIN, STOCK, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name: { type: string }
-                unit: { type: string }
-                minimum_stock: { type: number }
-                cost_per_unit: { type: number }
-                expiration_date: { type: string, format: date }
-                supplier_id: { type: integer, nullable: true }
-      responses:
-        '200':
-          description: Ingredient updated
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Ingredient' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    delete:
-      tags: [Ingredients]
-      summary: Delete ingredient (ADMIN; refused if used in recipes)
-      security:
-        - bearerAuth: []
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      responses:
-        '200': { description: Ingredient deleted }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
-  /ingredients/{id}/movement:
-    post:
-      tags: [Ingredients]
-      summary: Apply stock movement (IN/OUT/WASTE/ADJUSTMENT) (ADMIN, STOCK, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [movement_type, quantity]
-              properties:
-                movement_type: { type: string, enum: [IN, OUT, WASTE, ADJUSTMENT] }
-                quantity: { type: number }
-                reason: { type: string }
-                expiration_date: { type: string, format: date }
-                batch_number: { type: string }
-      responses:
-        '200':
-          description: Stock movement recorded
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  message: { type: string }
-                  ingredient: { $ref: '#/components/schemas/Ingredient' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
-  /sales:
-    get:
-      tags: [Sales]
-      summary: List sales (ADMIN, CASHIER, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - { name: period, in: query, required: false, schema: { type: string, enum: [day, week, month] } }
-        - { name: product_id, in: query, required: false, schema: { type: integer } }
-        - { name: start_date, in: query, required: false, schema: { type: string, format: date } }
-        - { name: end_date, in: query, required: false, schema: { type: string, format: date } }
-      responses:
-        '200':
-          description: List of sales
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Sale' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-    post:
-      tags: [Sales]
-      summary: Record a sale (deducts product stock) (ADMIN, CASHIER, PRODUCTION)
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/SaleInput' }
-      responses:
-        '201':
-          description: Sale created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Sale' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-/sales/history:
-    get:
-      tags: [Sales]
-      summary: Sales history with identical filters to GET /sales (ADMIN, CASHIER, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - { name: period, in: query, required: false, schema: { type: string, enum: [day, week, month] } }
-        - { name: product_id, in: query, required: false, schema: { type: integer } }
-        - { name: start_date, in: query, required: false, schema: { type: string, format: date } }
-        - { name: end_date, in: query, required: false, schema: { type: string, format: date } }
-      responses:
-        '200':
-          description: List of sales
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Sale' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
-  /sales/metrics:
-    get:
-      tags: [Sales]
-      summary: Sales KPIs (day/week/month revenue, count, top products) (ADMIN, CASHIER, PRODUCTION)
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Sales metrics
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/SalesMetrics' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
-  /sales/{id}:
-    get:
-      tags: [Sales]
-      summary: Get a sale with items and payments (ADMIN, CASHIER, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      responses:
-        '200':
-          description: Sale detail
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Sale' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /sales/{id}/ticket/html:
-    get:
-      tags: [Sales]
-      summary: HTML cash-register ticket (ADMIN, CASHIER, PRODUCTION)
-      security:
-        - bearerAuth: []
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      responses:
-        '200':
-          description: HTML ticket
-          content:
-            text/html:
-              schema: { type: string }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-
-  /employees:
-    get:
-      tags: [Employees]
-      summary: List employee records (EMPLOYEE sees only self)
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: List of employees
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Employee' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-    post:
-      tags: [Employees]
-      summary: Create employee + user account (ADMIN)
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/EmployeeInput' }
-      responses:
-        '201':
-          description: Employee created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Employee' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
-  /employees/{id}:
-    get:
-      tags: [Employees]
-      summary: Get employee (EMPLOYEE sees only self)
-      security:
-        - bearerAuth: []
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      responses:
-        '200':
-          description: Employee detail
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Employee' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    put:
-      tags: [Employees]
-      summary: Update employee (ADMIN)
-      security:
-        - bearerAuth: []
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                user_id: { type: integer }
-                first_name: { type: string }
-                last_name: { type: string }
-                phone: { type: string }
-                job_title: { type: string }
-                hire_date: { type: string, format: date }
-                address: { type: string }
-      responses:
-        '200':
-          description: Employee updated
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Employee' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    delete:
-      tags: [Employees]
-      summary: Delete employee (ADMIN)
-      security:
-        - bearerAuth: []
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      responses:
-        '200': { description: Employee deleted }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
+                  status:
+                    type: string
+                    example: ok
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'

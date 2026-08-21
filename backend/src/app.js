@@ -57,6 +57,9 @@ app.get('/api/health', (req, res) => {
 
 const auditLogsRouter = require('./routes/auditLogs');
 
+// Swagger UI documentation (GET /docs, GET /docs/openapi.yaml) — additive only.
+const docsRouter = require('./docs/swagger');
+
 // API Routes
 app.use('/api/auth', authRouter);
 app.use('/api/products', productsRouter);
@@ -73,6 +76,9 @@ app.use('/api/analytics', analyticsRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/audit-logs', auditLogsRouter);
 app.use('/audit-logs', auditLogsRouter);
+
+// Interactive API documentation — registered before the 404 JSON fallback.
+app.use('/docs', docsRouter);
 
 const { requireAuth, requireRole } = require('./middleware/auth');
 
