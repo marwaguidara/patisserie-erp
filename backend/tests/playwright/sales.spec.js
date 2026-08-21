@@ -6,7 +6,7 @@ test.describe('Sprint 2 Sales UI', () => {
   test('should allow login and create a sale through the frontend', async ({ page }) => {
     await page.goto(BASE_URL);
     await page.click('button#login-modal-btn');
-    await page.selectOption('#login-email-select', 'cashier@bakery.com');
+    await page.fill('#login-email', 'cashier@bakery.com');
     await page.fill('#login-password', 'password123');
     await page.click('#login-form button[type="submit"]');
 

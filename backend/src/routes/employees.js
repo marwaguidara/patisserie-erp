@@ -1,16 +1,101 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db/connection');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, requirePermission } = require('../middleware/auth');
+const { validate } = require('../middleware/validate');
+const { createEmployeeSchema, updateEmployeeSchema } = require('../validators/employee.schema');
 
 const router = express.Router();
+
+/**
+ * Helper: resolve the employee.id that belongs to the authenticated user.
+ * Returns null when no employee profile is linked (caller decides what to do).
+ */
+async function getSelfEmployeeId(userId) {
+  const employee = await db('employees').where({ user_id: userId }).first();
+  return employee ? employee.id : null;
+}
 
 async function hasEmployeeColumn(column) {
   return db.schema.hasColumn('employees', column);
 }
 
+// ─────────────────────────────────────────────────────────────────────
+//  RH Self-Service endpoints (available to ALL authenticated roles)
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/employees/profile
+ * Self-scoped profile for all authenticated roles.
+ */
+router.get('/profile', requireAuth, requirePermission('view_profile'), async (req, res, next) => {
+  try {
+    const employeeId = await getSelfEmployeeId(req.user.id);
+    if (!employeeId) {
+      return res.status(404).json({ error: 'No employee profile linked to this user.' });
+    }
+    const employee = await db('employees')
+      .where('employees.id', employeeId)
+      .join('users', 'employees.user_id', 'users.id')
+      .select(
+        'employees.id',
+        'employees.user_id',
+        'employees.first_name',
+        'employees.last_name',
+        'employees.phone',
+        'employees.job_title',
+        'employees.hire_date',
+        'employees.address',
+        'employees.created_at',
+        'employees.updated_at',
+        'users.name as user_name',
+        'users.email as user_email',
+        'users.role as user_role'
+      )
+      .first();
+    res.json(employee);
+  } catch (err) { next(err); }
+});
+
+/**
+ * GET /api/employees/hours
+ * Self-scoped work-hours summary for all authenticated roles.
+ */
+router.get('/hours', requireAuth, requirePermission('view_hours'), async (req, res, next) => {
+  try {
+    const employeeId = await getSelfEmployeeId(req.user.id);
+    if (!employeeId) {
+      return res.status(404).json({ error: 'No employee profile linked to this user.' });
+    }
+    const { start_date, end_date } = req.query;
+    let query = db('schedules').where('schedules.employee_id', employeeId);
+    if (start_date) query = query.where('schedules.shift_start', '>=', start_date);
+    if (end_date) query = query.where('schedules.shift_start', '<=', end_date);
+    const schedules = await query.select('shift_start', 'shift_end', 'notes');
+
+    let totalHours = 0;
+    const scheduleList = schedules.map((s) => {
+      const hours = (new Date(s.shift_end) - new Date(s.shift_start)) / 36e5;
+      totalHours += hours;
+      return { shift_start: s.shift_start, shift_end: s.shift_end, hours, notes: s.notes };
+    });
+
+    let leaveQuery = db('leaves').where('leaves.employee_id', employeeId);
+    if (start_date) leaveQuery = leaveQuery.where('leaves.start_date', '>=', start_date);
+    if (end_date) leaveQuery = leaveQuery.where('leaves.end_date', '<=', end_date);
+    const leaves = await leaveQuery.select('start_date', 'end_date', 'status', 'reason');
+
+    res.json({ employee_id: employeeId, total_hours: totalHours, schedules: scheduleList, leaves });
+  } catch (err) { next(err); }
+});
+
 // GET /api/employees
-router.get('/', requireAuth, requireRole(['ADMIN', 'EMPLOYEE', 'STOCK', 'PRODUCTION', 'CASHIER']), async (req, res, next) => {
+// ADMIN: full directory (all employees). Non-ADMIN: self only.
+// Gate permission: view_profile (available to every authenticated role) because
+// the endpoint self-filters non-ADMIN results. 'view_employee_directory'
+// (ADMIN-only) is kept in DEFAULT_ROLE_PERMISSIONS as the fine-grained gate for
+// a future raw full-directory endpoint; it must not reject the self-scoped case.
+router.get('/', requireAuth, requirePermission('view_profile'), async (req, res, next) => {
   try {
     // Explicit column whitelist — never expose HR-private columns (e.g. salary)
     // via this endpoint. Kept consistent with the GET /api/employees/:id payload.
@@ -32,7 +117,8 @@ router.get('/', requireAuth, requireRole(['ADMIN', 'EMPLOYEE', 'STOCK', 'PRODUCT
         'users.role as user_role'
       );
 
-    if (req.user.role === 'EMPLOYEE') {
+        // Non-ADMIN users see ONLY their own employee record
+    if (req.user.role !== 'ADMIN') {
       const employee = await db('employees').where({ user_id: req.user.id }).first();
       if (!employee) {
         return res.status(403).json({ error: 'No employee profile linked to this user.' });
@@ -50,7 +136,7 @@ router.get('/', requireAuth, requireRole(['ADMIN', 'EMPLOYEE', 'STOCK', 'PRODUCT
 // GET /api/schedules
 // Returns schedules joined with employee names so the frontend can render
 // "who works when" without a second round-trip.
-router.get('/schedules', requireAuth, requireRole(['ADMIN', 'EMPLOYEE']), async (req, res, next) => {
+router.get('/schedules', requireAuth, requirePermission('view_schedule'), async (req, res, next) => {
   try {
     let query = db('schedules')
       .join('employees', 'schedules.employee_id', 'employees.id')
@@ -61,12 +147,13 @@ router.get('/schedules', requireAuth, requireRole(['ADMIN', 'EMPLOYEE']), async 
       )
       .orderBy('schedules.shift_start', 'asc');
 
-    if (req.user.role === 'EMPLOYEE') {
-      const employee = await db('employees').where({ user_id: req.user.id }).first();
-      if (!employee) {
+                // Non-ADMIN users see ONLY their own schedules
+    if (req.user.role !== 'ADMIN') {
+      const employeeId = await getSelfEmployeeId(req.user.id);
+      if (!employeeId) {
         return res.status(403).json({ error: 'No employee profile linked to this user.' });
       }
-      query = query.where('schedules.employee_id', employee.id);
+      query = query.where('schedules.employee_id', employeeId);
     }
 
     const schedules = await query;
@@ -77,7 +164,7 @@ router.get('/schedules', requireAuth, requireRole(['ADMIN', 'EMPLOYEE']), async 
 });
 
 // POST /api/schedules
-router.post('/schedules', requireAuth, requireRole(['ADMIN']), async (req, res, next) => {
+router.post('/schedules', requireAuth, requirePermission('create_schedule'), async (req, res, next) => {
   try {
     const { employee_id, shift_start, shift_end, notes } = req.body;
     if (!employee_id || !shift_start || !shift_end) {
@@ -107,7 +194,7 @@ router.post('/schedules', requireAuth, requireRole(['ADMIN']), async (req, res, 
 // GET /api/leaves
 // Returns leaves joined with employee names + leave status so the frontend
 // can render the full leave board for ADMIN and self-filtered for EMPLOYEE.
-router.get('/leaves', requireAuth, requireRole(['ADMIN', 'EMPLOYEE']), async (req, res, next) => {
+router.get('/leaves', requireAuth, requirePermission('view_leave'), async (req, res, next) => {
   try {
     let query = db('leaves')
       .join('employees', 'leaves.employee_id', 'employees.id')
@@ -118,7 +205,8 @@ router.get('/leaves', requireAuth, requireRole(['ADMIN', 'EMPLOYEE']), async (re
       )
       .orderBy('leaves.start_date', 'desc');
 
-    if (req.user.role === 'EMPLOYEE') {
+                // Non-ADMIN users see ONLY their own leaves
+    if (req.user.role !== 'ADMIN') {
       const employee = await db('employees').where({ user_id: req.user.id }).first();
       if (!employee) {
         return res.status(403).json({ error: 'No employee profile linked to this user.' });
@@ -132,9 +220,7 @@ router.get('/leaves', requireAuth, requireRole(['ADMIN', 'EMPLOYEE']), async (re
     next(err);
   }
 });
-
-// POST /api/leaves
-router.post('/leaves', requireAuth, requireRole(['ADMIN', 'EMPLOYEE']), async (req, res, next) => {
+router.post('/leaves', requireAuth, requirePermission('create_leave'), async (req, res, next) => {
   try {
     const { employee_id, start_date, end_date, reason, status } = req.body;
     if (!employee_id || !start_date || !end_date) {
@@ -146,7 +232,8 @@ router.post('/leaves', requireAuth, requireRole(['ADMIN', 'EMPLOYEE']), async (r
       return res.status(400).json({ error: 'Employee introuvable.' });
     }
 
-    if (req.user.role === 'EMPLOYEE') {
+    // Non-ADMIN users can only create leaves for their OWN profile
+    if (req.user.role !== 'ADMIN') {
       const linkedEmployee = await db('employees').where({ user_id: req.user.id }).first();
       if (!linkedEmployee || linkedEmployee.id !== employee_id) {
         return res.status(403).json({ error: 'Vous pouvez seulement créer des congés pour votre propre profil.' });
@@ -158,7 +245,7 @@ router.post('/leaves', requireAuth, requireRole(['ADMIN', 'EMPLOYEE']), async (r
       start_date,
       end_date,
       reason: reason || null,
-      // Employees cannot self-approve: only ADMIN-set status is respected,
+      // Non-ADMIN users cannot self-approve: only ADMIN-set status is respected,
       // everyone else is forced to PENDING (H-1 security fix).
       status: req.user.role === 'ADMIN' ? (status || 'PENDING') : 'PENDING'
     }).returning('id');
@@ -171,9 +258,64 @@ router.post('/leaves', requireAuth, requireRole(['ADMIN', 'EMPLOYEE']), async (r
   }
 });
 
+// POST /api/employees/leaves/me
+// Self-service leave request : the employee is ALWAYS resolved from req.user.id
+// (never from the body) and the status is ALWAYS forced to 'PENDING', so an
+// employee can never self-approve (a submitted status is silently ignored).
+// This is a self-service variant of POST /api/employees/leaves (admin route),
+// which is left untouched.
+router.post('/leaves/me', requireAuth, async (req, res, next) => {
+  try {
+    const { start_date, end_date, reason } = req.body;
+
+    if (!start_date || !end_date) {
+      return res.status(400).json({ error: 'start_date et end_date sont requis.' });
+    }
+
+    const start = new Date(`${start_date}T00:00:00`);
+    const end = new Date(`${end_date}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return res.status(400).json({ error: 'Dates invalides.' });
+    }
+
+    // start_date <= end_date
+    if (start > end) {
+      return res.status(400).json({ error: 'La date de début doit être antérieure ou égale à la date de fin.' });
+    }
+
+    // Neither date may be in the past (today is allowed).
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (start < today || end < today) {
+      return res.status(400).json({ error: 'Les dates de congé ne peuvent pas être dans le passé.' });
+    }
+
+    // Single source of truth: the authenticated user (from the token).
+    const employeeId = await getSelfEmployeeId(req.user.id);
+    if (!employeeId) {
+      return res.status(403).json({ error: 'Aucun profil employé lié à ce compte.' });
+    }
+
+    const [id] = await db('leaves').insert({
+      employee_id: employeeId,
+      start_date,
+      end_date,
+      reason: reason || null,
+      // Always PENDING — the employee can never self-approve.
+      status: 'PENDING'
+    }).returning('id');
+
+    const leaveId = typeof id === 'object' ? id.id : id;
+    const created = await db('leaves').where({ id: leaveId }).first();
+    res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PUT /api/employees/leaves/:id/status
 // ADMIN-only: approve, reject or reset a leave request.
-router.put('/leaves/:id/status', requireAuth, requireRole(['ADMIN']), async (req, res, next) => {
+router.put('/leaves/:id/status', requireAuth, requirePermission('approve_leave'), async (req, res, next) => {
   try {
     const leaveId = parseInt(req.params.id, 10);
     const { status } = req.body;
@@ -196,7 +338,8 @@ router.put('/leaves/:id/status', requireAuth, requireRole(['ADMIN']), async (req
 });
 
 // GET /api/employees/:id
-router.get('/:id', requireAuth, requireRole(['ADMIN', 'EMPLOYEE', 'STOCK', 'PRODUCTION', 'CASHIER']), async (req, res, next) => {
+// ADMIN: any employee. Non-ADMIN: self only.
+router.get('/:id', requireAuth, requirePermission('view_profile'), async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
     const employee = await db('employees')
@@ -223,7 +366,8 @@ router.get('/:id', requireAuth, requireRole(['ADMIN', 'EMPLOYEE', 'STOCK', 'PROD
       return res.status(404).json({ error: 'Employee not found.' });
     }
 
-    if (req.user.role === 'EMPLOYEE') {
+    // Non-ADMIN users can only view their OWN profile
+    if (req.user.role !== 'ADMIN') {
       const linkedEmployee = await db('employees').where({ user_id: req.user.id }).first();
       if (!linkedEmployee || linkedEmployee.id !== id) {
         return res.status(403).json({ error: 'Accès refusé à ce profil.' });
@@ -241,7 +385,7 @@ router.get('/:id', requireAuth, requireRole(['ADMIN', 'EMPLOYEE', 'STOCK', 'PROD
 //  A) Backward-compatible: provide an existing `user_id` to link a profile.
 //  B) Onboarding: provide `email`, `password`, `role` to atomically create
 //     the user account + employee profile in a single transaction.
-router.post('/', requireAuth, requireRole(['ADMIN']), async (req, res, next) => {
+router.post('/', requireAuth, requirePermission('crud_employee'), validate(createEmployeeSchema), async (req, res, next) => {
   try {
     const { user_id, first_name, last_name, email, password, role, phone, job_title, hire_date, address } = req.body;
 
@@ -337,8 +481,104 @@ router.post('/', requireAuth, requireRole(['ADMIN']), async (req, res, next) => 
   }
 });
 
+// PUT /api/employees/me/password
+// Self-service password change — available to every authenticated role.
+// The employee is ALWAYS resolved from req.user.id (the JWT subject), and any
+// user/employee id in the body or params is deliberately ignored, so no user
+// can change someone else's password. Reuses the same bcrypt mechanism used
+// at employee creation (auth.js / POST /api/employees) — nothing is duplicated.
+router.put('/me/password', requireAuth, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (typeof currentPassword !== 'string' || !currentPassword) {
+      return res.status(400).json({ error: 'Le mot de passe actuel est requis.' });
+    }
+    if (typeof newPassword !== 'string' || newPassword.length < 8) {
+      return res.status(400).json({ error: 'Le nouveau mot de passe doit contenir au moins 8 caractères.' });
+    }
+
+    // Single source of truth: the authenticated user (from the token), never body/params.
+    const user = await db('users').where({ id: req.user.id }).first();
+    if (!user) {
+      return res.status(404).json({ error: 'Utilisateur introuvable.' });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Mot de passe actuel incorrect.' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await db('users').where({ id: user.id }).update({ password_hash: passwordHash });
+
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/employees/me/profile
+// Self-service update of the employee's OWN contact info (phone / address only).
+// This is a self-service variant of PUT /api/employees/:id (admin route).
+// Whitelist constraint: ONLY `phone` and `address` are ever written. Any
+// protected field (email, role, job_title, hire_date, name, user_id) that a
+// caller might smuggle into the body is deliberately IGNORED.
+// The target employee is ALWAYS resolved from req.user.id — never from an id
+// in the body or params.
+router.put('/me/profile', requireAuth, async (req, res, next) => {
+  try {
+    const { phone, address } = req.body;
+
+    // Basic validation: if provided, values must be non-empty strings.
+    if (phone !== undefined && (typeof phone !== 'string' || phone.trim() === '')) {
+      return res.status(400).json({ error: 'Le téléphone doit être une chaîne non vide.' });
+    }
+    if (address !== undefined && (typeof address !== 'string' || address.trim() === '')) {
+      return res.status(400).json({ error: 'L\'adresse doit être une chaîne non vide.' });
+    }
+
+    // Single source of truth: the authenticated user (from the token), never body/params.
+    const employeeId = await getSelfEmployeeId(req.user.id);
+    if (!employeeId) {
+      return res.status(403).json({ error: 'Aucun profil employé lié à ce compte.' });
+    }
+
+    // Build a strictly whitelisted update — no email / role / job_title /
+    // hire_date / name can be written here, regardless of what the body contains.
+    const updateData = {};
+    if (phone !== undefined) updateData.phone = phone.trim();
+    if (address !== undefined && (await hasEmployeeColumn('address'))) {
+      updateData.address = address.trim();
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      // Nothing whitelisted was provided (e.g. only email/role in the body).
+      const current = await db('employees').where({ id: employeeId }).first();
+      return res.json(current);
+    }
+
+    await db('employees').where({ id: employeeId }).update(updateData);
+    const updated = await db('employees').where({ id: employeeId }).first();
+
+    // Return the same public shape as GET /profile (phone + address are the only
+    // writable fields the frontend consumes here).
+    res.json({
+      id: updated.id,
+      first_name: updated.first_name,
+      last_name: updated.last_name,
+      phone: updated.phone,
+      job_title: updated.job_title,
+      hire_date: updated.hire_date,
+      address: updated.address
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PUT /api/employees/:id
-router.put('/:id', requireAuth, requireRole(['ADMIN']), async (req, res, next) => {
+router.put('/:id', requireAuth, requirePermission('crud_employee'), validate(updateEmployeeSchema), async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
     const existing = await db('employees').where({ id }).first();
@@ -384,7 +624,7 @@ router.put('/:id', requireAuth, requireRole(['ADMIN']), async (req, res, next) =
 });
 
 // DELETE /api/employees/:id
-router.delete('/:id', requireAuth, requireRole(['ADMIN']), async (req, res, next) => {
+router.delete('/:id', requireAuth, requirePermission('crud_employee'), async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
     const existing = await db('employees').where({ id }).first();

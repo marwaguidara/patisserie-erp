@@ -148,13 +148,27 @@ class SalesService {
       .where('sale_id', saleId)
       .select('id', 'product_id', 'quantity', 'unit_price', 'cost_per_unit', 'margin', 'subtotal');
 
+    // Fetch product names to replace IDs in ticket display
+    const productIds = [...new Set(items.map((item) => item.product_id))];
+    const products = await knexInstance('products')
+      .whereIn('id', productIds)
+      .select('id', 'name');
+
+    const productsById = Object.fromEntries(products.map((p) => [p.id, p.name]));
+
+    // Replace product_id with product_name in items
+    const itemsWithNames = items.map((item) => ({
+      ...item,
+      product_name: productsById[item.product_id] || `Produit #${item.product_id}`
+    }));
+
     const payments = await knexInstance('payments')
       .where('sale_id', saleId)
       .select('id', 'payment_method', 'amount', 'status', 'provider', 'created_at');
 
     return {
       ...sale,
-      items,
+      items: itemsWithNames,
       payments
     };
   }
@@ -270,7 +284,7 @@ class SalesService {
     }
 
     const lines = sale.items.map((item) => {
-      return `<tr><td>${item.quantity}</td><td>${item.product_id}</td><td>${item.unit_price.toFixed(2)} €</td><td>${item.subtotal.toFixed(2)} €</td></tr>`;
+      return `<tr><td>${item.quantity}</td><td>${item.product_name || 'Produit inconnu'}</td><td>${item.unit_price.toFixed(2)} DT</td><td>${item.subtotal.toFixed(2)} DT</td></tr>`;
     }).join('');
 
     return `<!DOCTYPE html>
@@ -294,8 +308,8 @@ class SalesService {
 <thead><tr><th>Qté</th><th>Produit</th><th>PU</th><th>Sous-total</th></tr></thead>
 <tbody>${lines}</tbody>
 </table>
-<p><strong>Total:</strong> ${sale.total_amount.toFixed(2)} €</p>
-<p><strong>Marge:</strong> ${sale.total_margin.toFixed(2)} €</p>
+<p><strong>Total:</strong> ${sale.total_amount.toFixed(2)} DT</p>
+<p><strong>Marge:</strong> ${sale.total_margin.toFixed(2)} DT</p>
 </body>
 </html>`;
   }

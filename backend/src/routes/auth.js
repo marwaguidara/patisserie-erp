@@ -3,11 +3,13 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../db/connection');
 const { requireAuth, requireRole, JWT_SECRET } = require('../middleware/auth');
+const { validate } = require('../middleware/validate');
+const { loginSchema } = require('../validators/auth.schema');
 
 const router = express.Router();
 
 // POST /api/auth/login
-router.post('/login', async (req, res, next) => {
+router.post('/login', validate(loginSchema), async (req, res, next) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {

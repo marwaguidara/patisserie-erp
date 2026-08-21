@@ -111,7 +111,7 @@ describe('H-4: Sale costs, margins and totals are persisted', () => {
     expect(ticketRes.statusCode).toEqual(200);
     expect(ticketRes.headers['content-type']).toContain('text/html');
     // 2 croissants: margin = 2 * (1.30 - 0.451) = 1.698 -> 1.70
-    // The markup is "<strong>Marge:</strong> 1.70 €", so account for the
+    // The markup is "<strong>Marge:</strong> 1.70 DT", so account for the
     // closing </strong> tag. Assert on the numeric value only — the euro
     // sign round-trip depends on the response charset (text/html without
     // charset decodes as latin-1 in supertest), so the numeric check is

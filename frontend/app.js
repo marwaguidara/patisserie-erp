@@ -25,13 +25,180 @@ let customerOrdersList = [];
 // ===== RBAC UI Visibility (frontend-only) =====
 // Backend authorization remains the single source of truth; these rules
 // only control what the UI reveals to each role.
+//
+// Every non-ADMIN role now has access to the RH self-service module:
+//   employees  (self profile / directory / schedules / leaves / hours)
+// 'profile' (Mon Profil) and 'hours' (Mes Heures) are self-service tabs visible
+// to EVERY authenticated role — keep them in each role's ROLE_TABS entry.
 const ROLE_TABS = {
-        ADMIN:['catalog', 'ingredients', 'production', 'sales', 'employees', 'suppliers', 'categories', 'purchase-orders', 'customer-orders', 'forecast', 'ai-technical', 'segmentation', 'dashboard'],
-  STOCK: ['ingredients', 'suppliers', 'purchase-orders', 'forecast'],
-  CASHIER: ['sales', 'customer-orders'],
-  PRODUCTION: ['catalog', 'ingredients', 'production', 'customer-orders', 'purchase-orders', 'forecast'],
-  EMPLOYEE: ['employees']
+  ADMIN: ['catalog', 'ingredients', 'production', 'sales', 'employees', 'profile', 'hours', 'suppliers', 'categories', 'purchase-orders', 'customer-orders', 'forecast', 'ai-technical', 'segmentation', 'dashboard'],
+
+  // Non-admin RH self-service tabs (replaces 'employees' with role-specific RH modules)
+  STOCK: ['catalog', 'categories', 'ingredients', 'suppliers', 'purchase-orders', 'forecast', 'profile', 'hours'],
+  CASHIER: ['sales', 'customer-orders', 'profile', 'hours'],
+  PRODUCTION: ['catalog', 'categories', 'ingredients', 'production', 'sales', 'forecast', 'profile', 'hours'],
+  EMPLOYEE: ['profile', 'hours']
 };
+
+// Centralized permission check (frontend mirror of backend requirePermission).
+// ADMIN always passes; other roles are checked against DEFAULT_ROLE_PERMISSIONS.
+const ROLE_PERMISSIONS = {
+  ADMIN: ['view_ai_forecast', 'run_ai_etl', 'view_ai_anomalies', 'view_ai_segmentation',
+          'view_ingredients', 'manage_ingredients', 'view_stock_alerts',
+          'view_sales', 'create_sale', 'view_suppliers', 'manage_suppliers',
+          'view_purchase_orders', 'manage_purchase_orders', 'view_customer_orders',
+          'manage_customer_orders', 'view_products', 'manage_products',
+          'view_dashboard', 'crud_employee', 'view_profile', 'view_schedule',
+          'view_leave', 'view_hours', 'create_leave', 'create_schedule',
+          'approve_leave', 'reject_leave'],
+  STOCK: ['view_products', 'view_ingredients', 'manage_ingredients', 'view_stock_alerts',
+          'view_suppliers', 'manage_suppliers', 'view_purchase_orders', 'manage_purchase_orders',
+          'view_ai_forecast', 'view_ai_anomalies',
+          'view_profile', 'view_schedule', 'view_leave', 'view_hours', 'create_leave'],
+  CASHIER: ['view_sales', 'create_sale', 'view_customer_orders', 'manage_customer_orders',
+            'view_products',
+            'view_profile', 'view_schedule', 'view_leave', 'view_hours', 'create_leave'],
+  PRODUCTION: ['view_products', 'view_ingredients', 'manage_ingredients',
+               'view_ai_forecast', 'view_sales',
+               'view_profile', 'view_schedule', 'view_leave', 'view_hours', 'create_leave'],
+  EMPLOYEE: ['view_products',
+             'view_profile', 'view_schedule', 'view_leave', 'view_hours', 'create_leave']
+};
+
+// ===== SIDEBAR NAVIGATION (2026 UI/UX refactor) =====
+// Chaque groupe regroupe des onglets existants (réutilise switchToTab, aucune
+// logique métier dupliquée). "single" rend un lien direct (sans sous-menu).
+const SIDEBAR_GROUPS = [
+  { id: 'dashboard', label: 'Dashboard', icon: '🏠', single: true, tab: 'dashboard' },
+  { id: 'catalogue', label: 'Catalogue', icon: '📦', items: [
+    { tab: 'catalog', label: 'Produits' },
+    { tab: 'categories', label: 'Catégories' },
+    { tab: 'ingredients', label: 'Stocks & Ingrédients' }
+  ]},
+  { id: 'operations', label: 'Opérations', icon: '🏭', items: [
+    { tab: 'production', label: 'Atelier de Fabrication' },
+    { tab: 'sales', label: 'Ventes' }
+  ]},
+    { id: 'rh', label: 'RH', icon: '👥', items: [
+    { tab: 'employees', label: 'Employés' },
+    { tab: 'profile', label: 'Mon Profil' },
+    { tab: 'hours', label: 'Mes Heures' }
+  ]},
+  { id: 'achats', label: 'Achats', icon: '🚚', items: [
+    { tab: 'suppliers', label: 'Fournisseurs' },
+    { tab: 'purchase-orders', label: 'Commandes Fournisseurs' }
+  ]},
+  { id: 'clients', label: 'Clients', icon: '🛒', items: [
+    { tab: 'customer-orders', label: 'Commandes Clients' }
+  ]},
+  { id: 'ia', label: 'IA & Reporting', icon: '🤖', items: [
+    { tab: 'forecast', label: 'Prévision IA' },
+    { tab: 'segmentation', label: 'Segmentation' }
+  ]},
+  { id: 'admin', label: 'Administration', icon: '⚙', items: [
+    { tab: 'ai-technical', label: 'Informations Techniques' }
+  ]}
+];
+
+function buildSidebar() {
+  const nav = document.getElementById('sidebar-nav');
+  if (!nav) return;
+  nav.innerHTML = '';
+  SIDEBAR_GROUPS.forEach((group) => {
+    const grpEl = document.createElement('div');
+    grpEl.className = 'sidebar-group';
+    grpEl.dataset.group = group.id;
+
+    if (group.single) {
+      const link = document.createElement('a');
+      link.className = 'sidebar-link';
+      link.dataset.tab = group.tab;
+      link.href = '#';
+      link.setAttribute('role', 'button');
+      link.innerHTML = `<span class="nav-icon">${group.icon}</span><span class="nav-label">${escapeHtml(group.label)}</span>`;
+      link.addEventListener('click', (e) => { e.preventDefault(); switchToTab(group.tab); });
+      grpEl.appendChild(link);
+      nav.appendChild(grpEl);
+      return;
+    }
+
+    const btn = document.createElement('button');
+    btn.className = 'sidebar-group-btn';
+    btn.type = 'button';
+    btn.innerHTML = `<span class="nav-icon">${group.icon}</span><span class="nav-label">${escapeHtml(group.label)}</span><span class="chevron">▾</span>`;
+    btn.addEventListener('click', () => {
+      const sn = document.getElementById('sidenav');
+      if (sn && sn.classList.contains('collapsed')) {
+        const cb = document.getElementById('sidebar-collapse');
+        if (cb) cb.click();
+        openSidebarGroup(group.id);
+      } else {
+        grpEl.classList.toggle('open');
+      }
+    });
+
+    const sub = document.createElement('div');
+    sub.className = 'sidebar-submenu';
+    group.items.forEach((item) => {
+      const link = document.createElement('a');
+      link.className = 'sidebar-link';
+      link.dataset.tab = item.tab;
+      link.href = '#';
+      link.setAttribute('role', 'button');
+      link.innerHTML = `<span class="nav-label">${escapeHtml(item.label)}</span>`;
+      link.addEventListener('click', (e) => { e.preventDefault(); switchToTab(item.tab); });
+      sub.appendChild(link);
+    });
+
+    grpEl.appendChild(btn);
+    grpEl.appendChild(sub);
+    nav.appendChild(grpEl);
+  });
+  openActiveSidebarLink();
+}
+
+function openSidebarGroup(id) {
+  document.querySelectorAll('.sidebar-group').forEach((g) => {
+    g.classList.toggle('open', g.dataset.group === id);
+  });
+}
+
+function openActiveSidebarLink() {
+  const activeContent = document.querySelector('.tab-content.active');
+  if (!activeContent) return;
+  const tabName = activeContent.id.replace('tab-', '');
+  const link = document.querySelector(`.sidebar-link[data-tab="${tabName}"]`);
+  if (link) {
+    link.classList.add('active');
+    const grp = link.closest('.sidebar-group');
+    if (grp) grp.classList.add('open');
+  }
+}
+
+function toggleSidebar() {
+  if (window.innerWidth <= 991) {
+    document.body.classList.toggle('sidebar-open');
+  } else {
+    const sn = document.getElementById('sidenav');
+    if (!sn) return;
+    sn.classList.toggle('collapsed');
+    const cb = document.getElementById('sidebar-collapse');
+    if (cb) cb.textContent = sn.classList.contains('collapsed') ? '⤡' : '⤢';
+  }
+}
+
+function initSidebarControls() {
+  const toggle = document.getElementById('sidebar-toggle');
+  const overlay = document.getElementById('sidebar-overlay');
+  const collapseBtn = document.getElementById('sidebar-collapse');
+  if (toggle) toggle.addEventListener('click', toggleSidebar);
+  if (overlay) overlay.addEventListener('click', () => document.body.classList.remove('sidebar-open'));
+  if (collapseBtn) collapseBtn.addEventListener('click', () => {
+    const sn = document.getElementById('sidenav');
+    sn.classList.toggle('collapsed');
+    collapseBtn.textContent = sn.classList.contains('collapsed') ? '⤡' : '⤢';
+  });
+}
 
 // Static header action buttons -> roles allowed to see them.
 const BUTTON_ROLES = {
@@ -40,7 +207,7 @@ const BUTTON_ROLES = {
   'open-create-ingredient-btn': ['ADMIN', 'STOCK'],
   'open-create-employee-btn': ['ADMIN'],
   'open-create-schedule-btn': ['ADMIN'],
-  'open-create-leave-btn': ['ADMIN', 'EMPLOYEE'],
+  'open-create-leave-btn': ['ADMIN', 'PRODUCTION', 'CASHIER', 'STOCK', 'EMPLOYEE'],
   'open-create-supplier-btn': ['ADMIN', 'STOCK'],
   'open-create-category-btn': ['ADMIN'],
   'open-create-po-btn': ['ADMIN', 'STOCK'],
@@ -51,18 +218,12 @@ function getRole() {
   return currentUser ? currentUser.role : '';
 }
 
-// Centralized RBAC permission evaluation helper
+// Centralized RBAC permission evaluation helper (frontend mirror of backend).
 function can(permission) {
   const role = getRole();
   if (!role) return false;
-  switch (permission) {
-    case 'view_ai_forecast':
-      return ['ADMIN', 'PRODUCTION', 'STOCK'].includes(role);
-    case 'run_ai_etl':
-      return ['ADMIN'].includes(role);
-    default:
-      return false;
-  }
+  if (role === 'ADMIN') return true;
+  return (ROLE_PERMISSIONS[role] || []).includes(permission);
 }
 
 function hasAnyRole(...roles) {
@@ -88,57 +249,104 @@ function applyRoleVisibility() {
   const role = getRole();
   const allowedTabs = role && ROLE_TABS[role] ? ROLE_TABS[role] : null; // null => all tabs
 
-  const allTabs = Array.from(document.querySelectorAll('.tab-btn'));
-  const allContents = Array.from(document.querySelectorAll('.tab-content'));
+  // 1) Sidebar links visibility by role
+  document.querySelectorAll('.sidebar-link').forEach((link) => {
+    const tab = link.dataset.tab;
+    let visible = !allowedTabs || allowedTabs.includes(tab);
+    if (tab === 'forecast') visible = can('view_ai_forecast');
+    link.style.display = visible ? '' : 'none';
+    if (!visible) link.classList.remove('active');
+  });
 
-  allTabs.forEach((tab) => {
-    let visible = !allowedTabs || allowedTabs.includes(tab.dataset.tab);
-    if (tab.dataset.tab === 'forecast') {
-      visible = can('view_ai_forecast');
-    }
-    tab.style.display = visible ? '' : 'none';
-    if (!visible) {
-      const content = document.getElementById('tab-' + tab.dataset.tab);
+  // 2) Hide groups whose sub-links are all hidden by role-based visibility
+  document.querySelectorAll('.sidebar-group').forEach((grp) => {
+    const hasVisible = Array.from(grp.querySelectorAll('.sidebar-link'))
+      .some((l) => l.style.display !== 'none');
+    grp.style.display = hasVisible ? '' : 'none';
+    if (!hasVisible) grp.classList.remove('open', 'active');
+  });
+
+  // 3) Deactivate sections whose tab is no longer visible
+  document.querySelectorAll('.sidebar-link').forEach((link) => {
+    if (link.style.display === 'none') {
+      const content = document.getElementById('tab-' + link.dataset.tab);
       if (content) content.classList.remove('active');
     }
   });
 
-  // If the active tab became hidden, switch to the first visible tab.
-  const activeTab = allTabs.find((t) => t.classList.contains('active'));
-  const activeStillVisible = activeTab && activeTab.style.display !== 'none';
-  if (!activeStillVisible && allTabs.length) {
-    const firstVisible = allTabs.find((t) => t.style.display !== 'none');
+  // 4) If the visible active route disappeared, switch to the first visible link
+  const activeLink = document.querySelector('.sidebar-link.active');
+  const activeVisible = activeLink && activeLink.style.display !== 'none';
+  if (!activeVisible) {
+    const firstVisible = Array.from(document.querySelectorAll('.sidebar-link'))
+      .find((l) => l.style.display !== 'none');
     if (firstVisible) {
-      allTabs.forEach((t) => t.classList.remove('active'));
-      allContents.forEach((c) => c.classList.remove('active'));
-      firstVisible.classList.add('active');
-      const target = document.getElementById('tab-' + firstVisible.dataset.tab);
-      if (target) target.classList.add('active');
+      switchToTab(firstVisible.dataset.tab);
     }
   }
 
-  // Gate the static header action buttons.
+  // 5) Gate the static header action buttons (unchanged behaviour)
   Object.entries(BUTTON_ROLES).forEach(([id, roles]) => {
     const btn = document.getElementById(id);
     if (btn) btn.style.display = roles.includes(role) ? '' : 'none';
   });
 
-  // EMPLOYEE: hide the employee directory and the admin-only leave-form
-  // controls so they only manage their own profile / schedules / leaves.
+  // 6) Non-ADMIN: hide employee directory and admin-only form controls
+  // so they only manage their own profile / schedules / leaves.
+  // All non-ADMIN roles are now covered (EMPLOYEE, CASHIER, STOCK, PRODUCTION).
   if (currentUser) {
-    const isEmployee = role === 'EMPLOYEE';
+    const isNotAdmin = role !== 'ADMIN';
     const dir = document.getElementById('employee-directory-container');
-    if (dir) dir.style.display = isEmployee ? 'none' : '';
-    const empField = document.getElementById('leave-employee-field');
-    if (empField) empField.style.display = isEmployee ? 'none' : '';
-    const statusField = document.getElementById('leave-status-field');
-    if (statusField) statusField.style.display = isEmployee ? 'none' : '';
+    if (dir) dir.style.display = isNotAdmin ? 'none' : '';
+    // The "Nouvel Employé" button is already hidden via BUTTON_ROLES for non-admin.
+    const createEmpBtn = document.getElementById('open-create-employee-btn');
+    if (createEmpBtn) createEmpBtn.style.display = isNotAdmin ? 'none' : '';
+    // Leaves form: non-ADMIN cannot set status
+    const leaveEmployeeField = document.getElementById('leave-employee-field');
+    if (leaveEmployeeField) leaveEmployeeField.style.display = isNotAdmin ? 'none' : '';
+    const leaveStatusField = document.getElementById('leave-status-field');
+    if (leaveStatusField) leaveStatusField.style.display = isNotAdmin ? 'none' : '';
+  }
+
+  // 7) Consolidated page-level refresh button (replaces 6 separate refresh buttons)
+  const refreshBtn = document.getElementById('refresh-page');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      // Reload relevant data based on current tab
+      const activeTab = document.querySelector('.tab-btn.active');
+      if (activeTab) {
+        const tab = activeTab.dataset.tab;
+        switch (tab) {
+          case 'profile':
+            fetchProfile();
+            break;
+          case 'hours':
+            fetchHours();
+            break;
+          case 'schedules':
+            fetchSchedules();
+            break;
+          case 'leaves':
+            fetchLeaves();
+            break;
+          default:
+            // Reload all RH-related data
+            fetchProfile();
+            fetchHours();
+            fetchSchedules();
+            fetchLeaves();
+        }
+      }
+    });
   }
 }
 
 
 document.addEventListener('DOMContentLoaded', async () => {
+  buildSidebar();
   initTabs();
+  initSidebarControls();
+  initNotifications();
   initAuth();
   await loadAllData();
   initSales();
@@ -148,6 +356,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('refresh-ingredients').addEventListener('click', fetchIngredients);
   document.getElementById('refresh-sales').addEventListener('click', loadSalesData);
   document.getElementById('refresh-employees').addEventListener('click', fetchEmployees);
+  document.getElementById('refresh-profile').addEventListener('click', fetchProfile);
+  document.getElementById('refresh-hours').addEventListener('click', fetchHours);
   document.getElementById('refresh-schedules').addEventListener('click', fetchSchedules);
   document.getElementById('refresh-leaves').addEventListener('click', fetchLeaves);
   document.getElementById('refresh-suppliers').addEventListener('click', fetchSuppliers);
@@ -164,6 +374,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('sales-filter-start').addEventListener('change', loadSalesHistory);
   document.getElementById('sales-filter-end').addEventListener('change', loadSalesHistory);
   document.getElementById('sales-form').addEventListener('submit', handleSalesSubmit);
+
+  // Sale details drawer wiring
+  document.getElementById('sd-close').addEventListener('click', closeSaleDetail);
+  document.getElementById('sd-close-bottom').addEventListener('click', closeSaleDetail);
+  document.getElementById('sd-ticket').addEventListener('click', () => {
+    if (currentSaleId) openSaleTicket(currentSaleId);
+  });
+  document.getElementById('sale-detail-modal').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeSaleDetail();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSaleDetail();
+  });
       document.getElementById('forecast-product-select').addEventListener('change', loadForecast);
       document.getElementById('forecast-horizon-select').addEventListener('change', loadForecast);
   document.getElementById('refresh-forecast-btn').addEventListener('click', refreshForecastData);
@@ -193,6 +416,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('employee-form').addEventListener('submit', handleSaveEmployee);
   document.getElementById('schedule-form').addEventListener('submit', handleSaveSchedule);
   document.getElementById('leave-form').addEventListener('submit', handleSaveLeave);
+  // Self-service « Demander un congé » (écran Mes Heures)
+  const requestMyLeaveBtn = document.getElementById('request-my-leave-btn');
+  if (requestMyLeaveBtn) requestMyLeaveBtn.addEventListener('click', openMyLeaveModal);
+  const myLeaveForm = document.getElementById('my-leave-form');
+  if (myLeaveForm) myLeaveForm.addEventListener('submit', handleSaveMyLeave);
+  // Self-service « Modifier mes informations » (phone / address)
+  const editProfileForm = document.getElementById('edit-profile-form');
+  if (editProfileForm) editProfileForm.addEventListener('submit', handleSaveEditProfile);
   document.getElementById('supplier-form').addEventListener('submit', handleSaveSupplier);
 
   // Sprint 4 Events
@@ -268,12 +499,20 @@ async function loadAllData() {
 
 async function loadAuthDependentData() {
   const tasks = [];
-  tasks.push(fetchEmployees());
-  if (hasAnyRole('ADMIN', 'STOCK', 'PRODUCTION')) tasks.push(fetchSuppliers());
-  if (hasAnyRole('ADMIN', 'EMPLOYEE')) {
-    tasks.push(fetchSchedules());
-    tasks.push(fetchLeaves());
+  if (hasAnyRole('ADMIN')) {
+    tasks.push(fetchEmployees()); // ADMIN sees full directory
+  } else {
+    // Non-ADMIN: still fetch employees (the API self-filters to own record)
+    // so that populateEmployeeSelects() has the 1 record for leave/schedule forms.
+    tasks.push(fetchEmployees());
   }
+  if (hasAnyRole('ADMIN', 'STOCK', 'PRODUCTION')) tasks.push(fetchSuppliers());
+  // All authenticated roles can view their own schedules and leaves
+  tasks.push(fetchSchedules());
+  tasks.push(fetchLeaves());
+  // All authenticated roles can view their own profile and hours
+  tasks.push(fetchProfile());
+  tasks.push(fetchHours());
   if (hasAnyRole('ADMIN', 'STOCK', 'PRODUCTION')) tasks.push(fetchPurchaseOrders());
   if (hasAnyRole('ADMIN', 'CASHIER', 'PRODUCTION')) tasks.push(fetchCustomerOrders());
   if (hasAnyRole('ADMIN')) tasks.push(fetchAvailableUsers());
@@ -514,7 +753,7 @@ function createSaleItemCard(productId = '', quantity = 1) {
   productsList.forEach((product) => {
     const option = document.createElement('option');
     option.value = product.id;
-    option.textContent = `${product.name} — ${parseFloat(product.price).toFixed(2)} € — Stock ${product.stock_quantity}`;
+    option.textContent = `${product.name} — ${parseFloat(product.price).toFixed(2)} DT — Stock ${product.stock_quantity}`;
     if (product.id == productId) option.selected = true;
     productSelect.appendChild(option);
   });
@@ -527,7 +766,7 @@ function createSaleItemCard(productId = '', quantity = 1) {
 
   const subtotalDisplay = document.createElement('div');
   subtotalDisplay.style = 'color: var(--text-secondary); font-size: 0.9rem;';
-  subtotalDisplay.textContent = 'Sous-total: 0.00 €';
+  subtotalDisplay.textContent = 'Sous-total: 0.00 DT';
 
   const removeBtn = document.createElement('button');
   removeBtn.type = 'button';
@@ -542,9 +781,9 @@ function createSaleItemCard(productId = '', quantity = 1) {
     const selectedProduct = productsList.find((p) => p.id == productSelect.value);
     const qtyVal = parseInt(qtyInput.value, 10) || 0;
     if (selectedProduct && qtyVal > 0) {
-      subtotalDisplay.textContent = `Sous-total: ${(selectedProduct.price * qtyVal).toFixed(2)} €`;
+      subtotalDisplay.textContent = `Sous-total: ${(selectedProduct.price * qtyVal).toFixed(2)} DT`;
     } else {
-      subtotalDisplay.textContent = 'Sous-total: 0.00 €';
+      subtotalDisplay.textContent = 'Sous-total: 0.00 DT';
     }
     updateSaleSummary();
   };
@@ -588,7 +827,7 @@ function updateSaleSummary() {
   });
 
   document.getElementById('sale-items-count').textContent = count;
-  document.getElementById('sale-total-amount').textContent = `${total.toFixed(2)} €`;
+  document.getElementById('sale-total-amount').textContent = `${total.toFixed(2)} DT`;
 }
 
 async function handleSalesSubmit(e) {
@@ -647,10 +886,10 @@ async function loadSalesMetrics() {
     grid.innerHTML = '';
 
     const cards = [
-      { title: "Revenu du jour", value: `${metrics.day.total_revenue.toFixed(2)} €`, subtitle: `${metrics.day.sales_count} ventes` },
-      { title: "Revenu semaine", value: `${metrics.week.total_revenue.toFixed(2)} €`, subtitle: `${metrics.week.sales_count} ventes` },
-      { title: "Revenu mois", value: `${metrics.month.total_revenue.toFixed(2)} €`, subtitle: `${metrics.month.sales_count} ventes` },
-      { title: "Panier moyen", value: `${metrics.month.average_ticket.toFixed(2)} €`, subtitle: `${metrics.top_products.length} produits vendus` }
+      { title: "Revenu du jour", value: `${metrics.day.total_revenue.toFixed(2)} DT`, subtitle: `${metrics.day.sales_count} ventes` },
+      { title: "Revenu semaine", value: `${metrics.week.total_revenue.toFixed(2)} DT`, subtitle: `${metrics.week.sales_count} ventes` },
+      { title: "Revenu mois", value: `${metrics.month.total_revenue.toFixed(2)} DT`, subtitle: `${metrics.month.sales_count} ventes` },
+      { title: "Panier moyen", value: `${metrics.month.average_ticket.toFixed(2)} DT`, subtitle: `${metrics.top_products.length} produits vendus` }
     ];
 
     cards.forEach((cardData) => {
@@ -706,7 +945,7 @@ function renderSalesHistory(sales) {
   tbody.innerHTML = '';
 
   if (!Array.isArray(sales) || sales.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--text-secondary);">Aucune vente trouvée pour les filtres sélectionnés.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--text-secondary);">Aucune vente trouvée pour les filtres sélectionnés.</td></tr>';
     return;
   }
 
@@ -714,14 +953,18 @@ function renderSalesHistory(sales) {
     const tr = document.createElement('tr');
     const itemsCount = sale.total_items || (sale.items ? sale.items.reduce((s, it) => s + (parseInt(it.quantity, 10) || 0), 0) : 0);
     const dateStr = sale.created_at ? new Date(sale.created_at).toLocaleString('fr-FR') : (sale.completed_at ? new Date(sale.completed_at).toLocaleString('fr-FR') : '—');
+    const itemsLabel = `${itemsCount} produit${itemsCount > 1 ? 's' : ''}`;
     tr.innerHTML = `
       <td>${sale.id}</td>
       <td>${dateStr}</td>
-      <td>${sale.customer_name || 'Walk-in'}</td>
-      <td>${parseFloat(sale.total_amount).toFixed(2)} €</td>
-      <td>${itemsCount}</td>
-      <td>${sale.payment_method || '—'}</td>
-      <td><button class="btn btn-secondary btn-sm" onclick="openSaleTicket(${sale.id})">🎟️ Ticket</button></td>
+      <td>${escapeHtml(sale.customer_name || 'Walk-in')}</td>
+      <td>${parseFloat(sale.total_amount).toFixed(2)} DT</td>
+      <td>${itemsLabel}</td>
+      <td class="sales-detail-cell">
+        <button type="button" class="btn btn-sm btn-details" onclick="openSaleDetail(${sale.id})" title="Voir le détail complet de la vente">
+          👁 Détails
+        </button>
+      </td>
     `;
     tbody.appendChild(tr);
   });
@@ -750,6 +993,81 @@ function openSaleTicket(saleId) {
     });
 }
 
+// ===== Sale details drawer (ERP) — réutilise GET /api/sales/:id existant =====
+let currentSaleId = null;
+
+function saleProductName(productId) {
+  const product = productsList.find((p) => Number(p.id) === Number(productId));
+  return product ? product.name : `Produit #${productId}`;
+}
+
+function closeSaleDetail() {
+  const overlay = document.getElementById('sale-detail-modal');
+  if (overlay) overlay.classList.add('hidden');
+}
+
+async function openSaleDetail(saleId) {
+  if (!authToken) {
+    showToast('Veuillez vous connecter pour voir le détail de la vente.', true);
+    return;
+  }
+  const overlay = document.getElementById('sale-detail-modal');
+  const body = document.getElementById('sale-detail-body');
+  if (!overlay || !body) return;
+
+  document.getElementById('sd-sale-id').textContent = saleId;
+  currentSaleId = saleId;
+  body.innerHTML = '<div class="sale-drawer-loading">Chargement du détail…</div>';
+  overlay.classList.remove('hidden');
+
+  try {
+    const sale = await safeFetchJson(`${API_BASE}/sales/${saleId}`, {
+      headers: { Authorization: `Bearer ${authToken}` }
+    });
+    renderSaleDetail(sale);
+  } catch (err) {
+    console.error('Erreur chargement détail vente:', err);
+    body.innerHTML = '<div class="sale-drawer-error">Impossible de charger le détail de la vente.</div>';
+  }
+}
+
+function renderSaleDetail(sale) {
+  const body = document.getElementById('sale-detail-body');
+  if (!body) return;
+
+  const items = Array.isArray(sale.items) ? sale.items : [];
+  const payment = sale.payment_method
+    || (Array.isArray(sale.payments) && sale.payments[0] ? sale.payments[0].payment_method : null)
+    || '—';
+  const dateStr = sale.completed_at || sale.created_at;
+  const dateLabel = dateStr ? new Date(dateStr).toLocaleString('fr-FR') : '—';
+  const subtotal = items.reduce((sum, it) => sum + (parseFloat(it.subtotal) || 0), 0);
+  const total = (sale.total_amount !== null && sale.total_amount !== undefined) ? parseFloat(sale.total_amount) : subtotal;
+
+  const itemsHtml = items.length
+    ? items.map((it) => `
+        <li class="sd-item">
+          <span class="sd-item-name">${escapeHtml(saleProductName(it.product_id))}</span>
+          <span class="sd-item-qty">× ${parseInt(it.quantity, 10) || 0}</span>
+          <span class="sd-item-subtotal">${(parseFloat(it.subtotal) || 0).toFixed(2)} DT</span>
+        </li>`).join('')
+    : '<li class="sd-empty">Aucun article enregistré.</li>';
+
+  body.innerHTML = `
+    <div class="sd-meta">
+      <div class="sd-meta-row"><span>Client</span><strong>${escapeHtml(sale.customer_name || 'Walk-in')}</strong></div>
+      <div class="sd-meta-row"><span>Téléphone</span><strong>${escapeHtml(sale.customer_phone || '—')}</strong></div>
+      <div class="sd-meta-row"><span>Date</span><strong>${escapeHtml(dateLabel)}</strong></div>
+      <div class="sd-meta-row"><span>Mode de paiement</span><strong>${escapeHtml(payment)}</strong></div>
+    </div>
+    <h4 class="sd-subtitle">Produits achetés</h4>
+    <ul class="sd-items">${itemsHtml}</ul>
+    <div class="sd-totals">
+      <div class="sd-total-row"><span>Sous-total</span><strong>${subtotal.toFixed(2)} DT</strong></div>
+      <div class="sd-total-row sd-total-grand"><span>Total</span><strong>${total.toFixed(2)} DT</strong></div>
+    </div>`;
+}
+
 function renderSalesMetricsPlaceholder() {
   const grid = document.getElementById('sales-metrics-grid');
   grid.innerHTML = '<div class="metric-card"><h4>Revenu du jour</h4><strong>—</strong><p>Connectez-vous pour voir les KPI</p></div>'.repeat(4);
@@ -757,7 +1075,7 @@ function renderSalesMetricsPlaceholder() {
 
 function renderSalesHistoryPlaceholder() {
   const tbody = document.getElementById('sales-history-tbody');
-  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--text-secondary);">Connectez-vous pour afficher l\'historique des ventes.</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--text-secondary);">Connectez-vous pour afficher l\'historique des ventes.</td></tr>';
 }
 
 // Tab navigation — shared implementation, also reused by the anomaly
@@ -820,7 +1138,7 @@ async function loadSegmentation() {
           : items.map((p) => `
             <div class="quadrant-item">
               <span class="quadrant-item-name">${escapeHtml(p.product_name || ('Produit #' + (p.product_id ?? '')))}</span>
-                            <span class="quadrant-meta">Marge ${p.margin !== undefined ? Number(p.margin).toFixed(2) + '€/u' : '—'} · Fréquence ${p.sales_frequency !== undefined ? Number(p.sales_frequency).toFixed(1) : '—'} /mois
+                            <span class="quadrant-meta">Marge ${p.margin !== undefined ? Number(p.margin).toFixed(2) + 'DT/u' : '—'} · Fréquence ${p.sales_frequency !== undefined ? Number(p.sales_frequency).toFixed(1) : '—'} /mois
                 <span class="confidence">${p.confidence && p.confidence.level ? ' (confiance ' + escapeHtml(String(p.confidence.level)) + ')' : ''}</span></span>
             </div>`).join('')
         }
@@ -854,13 +1172,36 @@ async function loadSegmentation() {
 
 // --- Tab switching ---
 function switchToTab(tabName) {
-  const tab = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
-  if (!tab) return;
   document.querySelectorAll('.tab-btn').forEach((t) => t.classList.remove('active'));
+  document.querySelectorAll('.sidebar-link').forEach((l) => l.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
-  tab.classList.add('active');
+
+  const tab = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+  if (tab) tab.classList.add('active');
+
+  // Activate the matching sidebar link and open its parent group
+  const link = document.querySelector(`.sidebar-link[data-tab="${tabName}"]`);
+  if (link) {
+    link.classList.add('active');
+    const grp = link.closest('.sidebar-group');
+    if (grp) {
+      document.querySelectorAll('.sidebar-group').forEach((g) => g.classList.remove('open'));
+      grp.classList.add('open');
+      const btn = grp.querySelector('.sidebar-group-btn');
+      if (btn) btn.classList.add('active');
+      const sb = document.getElementById('sidenav');
+      if (sb && sb.classList.contains('collapsed')) {
+        const cb = document.getElementById('sidebar-collapse');
+        if (cb) cb.click();
+      }
+    }
+  }
+
   const target = document.getElementById(`tab-${tabName}`);
   if (target) target.classList.add('active');
+
+  // On mobile, close the off-canvas sidebar after navigation
+  document.body.classList.remove('sidebar-open');
 }
 
 // Wiring for the Segmentation tab: load on open + button refresh. Also defines
@@ -890,13 +1231,37 @@ switchToTab = function (tabName) {
   if (tabName === 'dashboard' && hasAnyRole('ADMIN')) {
     loadAdminDashboard();
   }
+  if (tabName === 'profile') {
+    if (!currentProfile) fetchProfile();
+    if (!currentHours) fetchHours();
+  }
+  if (tabName === 'hours') {
+    if (!currentHours) fetchHours();
+  }
   return r;
 };
+
+// (L'activation de la catégorie/groupe parent est gérée dans switchToTab.)
 
 function initTabs() {
   document.querySelectorAll('.tab-btn').forEach((tab) => {
     tab.addEventListener('click', () => switchToTab(tab.dataset.tab));
   });
+}
+
+// Les helpers initCategoryTabs() / updateCategoryVisibility() ont été retirés :
+// la visibilité des groupes est désormais gérée par applyRoleVisibility() +
+// buildSidebar() (navigation par sidebar latérale).
+
+// ===== Landing Page Gate =====
+// The ERP (header + sidebar + dashboard tabs) is hidden behind a public
+// landing page until the visitor authenticates. The login modal sits
+// outside #erp-app so it stays reachable from the landing page.
+function setAppVisibility(authenticated) {
+  const erp = document.getElementById('erp-app');
+  const landing = document.getElementById('landing-page');
+  if (erp) erp.classList.toggle('hidden', !authenticated);
+  if (landing) landing.classList.toggle('hidden', authenticated);
 }
 
 // Auth Logic
@@ -910,22 +1275,44 @@ function initAuth() {
 
   loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const email = document.getElementById('login-email-select').value;
+    const email = document.getElementById('login-email').value;
     const password = document.getElementById('login-password').value;
 
+    if (!email || !password) {
+      showToast('Veuillez saisir votre email et votre mot de passe.', true);
+      return;
+    }
+
     try {
-      const data = await safeFetchJson(`${API_BASE}/auth/login`, {
+      const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
 
+      if (res.status !== 200) {
+        let msg = `Erreur de connexion (HTTP ${res.status}).`;
+        try {
+          const data = await res.json();
+          if (data && data.error) msg = data.error;
+        } catch (_) { /* corps non-JSON exploitable */ }
+        // Message clair pour des identifiants invalides (la route renvoie 401).
+        if (res.status === 401) {
+          showToast('Email ou mot de passe incorrect.', true);
+        } else {
+          showToast(msg, true);
+        }
+        return;
+      }
+
+      const data = await res.json();
       authToken = data.token;
       currentUser = data.user;
       localStorage.setItem('bakery_jwt', authToken);
 
       updateUserUI();
       closeModal('login-modal');
+      setAppVisibility(true);
       showToast(`Bienvenue, ${currentUser.name} (${currentUser.role})`);
       await loadAuthDependentData();
       loadSalesData();
@@ -934,9 +1321,9 @@ function initAuth() {
         loadAdminDashboard();
       }
     } catch (err) {
-      showToast(err.message, true);
+      showToast('Impossible de contacter le serveur.', true);
     }
-  });
+    });
 
   if (authToken) {
     safeFetchJson(`${API_BASE}/auth/me`, {
@@ -946,12 +1333,22 @@ function initAuth() {
         if (user && user.id) {
           currentUser = user;
           updateUserUI();
+          setAppVisibility(true);
           loadAuthDependentData();
           loadSalesData();
           loadAnomalies();
         }
       })
       .catch(() => localStorage.removeItem('bakery_jwt'));
+  }
+
+  // Hook du formulaire « Modifier mon mot de passe » (self-service)
+  const changePasswordForm = document.getElementById('change-password-form');
+  if (changePasswordForm) {
+    changePasswordForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await submitChangePassword();
+    });
   }
 }
 
@@ -970,10 +1367,18 @@ function logout() {
   authToken = null;
   currentUser = null;
   localStorage.removeItem('bakery_jwt');
+  // Reset notification state so no stale server notification from the previous
+  // session leaks into the panel after a user change / logout.
+  __serverNotifications = [];
+  __notifications = [];
+  __notifRead = new Set();
+  __persistNotifRead();
+  updateNotifBadge();
   document.getElementById('user-profile').innerHTML = `
-    <button class="btn btn-secondary" id="login-modal-btn" onclick="document.getElementById('login-modal').classList.remove('hidden')">Se Connecter</button>
+        <button class="btn btn-secondary" id="login-modal-btn" onclick="document.getElementById('login-modal').classList.remove('hidden')">Se Connecter</button>
   `;
   showToast('Déconnecté.');
+  setAppVisibility(false);
   applyRoleVisibility();
   loadAnomalies();
 }
@@ -1000,6 +1405,8 @@ async function fetchAlerts() {
     badgeExp.textContent = `⏳ ${alerts.expiring_soon_count} Péremption`;
     badgeLow.classList.toggle('hidden', (alerts.low_stock_count || 0) <= 0);
     badgeExp.classList.toggle('hidden', (alerts.expiring_soon_count || 0) <= 0);
+    __stockAlerts = alerts;
+    refreshNotifications();
 
     updateAlertsBadgeVisibility();
   } catch (err) {
@@ -1025,7 +1432,7 @@ async function loadAdminDashboard() {
     // --- KPI CORE (reuse /api/sales/metrics + /api/stocks/alerts fields) ---
     const { kpis } = data;
     summaryBox.innerHTML = `
-      <div class="card"><div class="card-body"><h3>CA mensuel</h3><p class="kpi-value">${Number(kpis.revenue || 0).toFixed(2)} €</p></div></div>
+      <div class="card"><div class="card-body"><h3>CA mensuel</h3><p class="kpi-value">${Number(kpis.revenue || 0).toFixed(2)} DT</p></div></div>
       <div class="card"><div class="card-body"><h3>Stock critique</h3><p class="kpi-value">${kpis.critical_stock_count || 0}</p></div></div>
       <div class="card"><div class="card-body"><h3>Meilleures ventes</h3>
         <ul class="kpi-list">${(kpis.top_products || []).map((p) =>
@@ -1069,7 +1476,7 @@ function exportDashboardToExcel() {
   const wb = XLSX.utils.book_new();
   // Sheet 1 – Core KPIs
   const kpiRows = [
-    { Indicateur: 'Chiffre d\'affaires (CA)', Valeur: Number(data.kpis.revenue || 0).toFixed(2) + ' €' },
+    { Indicateur: 'Chiffre d\'affaires (CA)', Valeur: Number(data.kpis.revenue || 0).toFixed(2) + ' DT' },
     { Indicateur: 'Stock critique', Valeur: data.kpis.critical_stock_count || 0 }
   ];
   (data.kpis.top_products || []).forEach((p, i) => {
@@ -1162,6 +1569,8 @@ async function loadAnomalies() {
   if (!authToken || !hasAnyRole('ADMIN', 'STOCK')) {
     badge.classList.add('hidden');
     panel.classList.add('hidden');
+    __aiAnomalies = [];
+    refreshNotifications();
     updateAlertsBadgeVisibility();
     return;
   }
@@ -1174,6 +1583,8 @@ async function loadAnomalies() {
     if (res.status === 401 || res.status === 403) {
       badge.classList.add('hidden');
       panel.classList.add('hidden');
+      __aiAnomalies = [];
+      refreshNotifications();
       updateAlertsBadgeVisibility();
       return;
     }
@@ -1181,6 +1592,8 @@ async function loadAnomalies() {
 
     const data = await res.json();
     const anomalies = Array.isArray(data.anomalies) ? data.anomalies : [];
+    __aiAnomalies = anomalies;
+    refreshNotifications();
     renderAnomalies(badge, panel, anomalies);
   } catch (err) {
     console.error('Erreur chargement anomalies:', err);
@@ -1255,6 +1668,305 @@ async function fetchEmployees() {
   } catch (err) {
     showToast('Erreur chargement employés', true);
   }
+}
+
+let currentProfile = null;
+let currentHours = null;
+
+async function fetchProfile() {
+  if (!authToken) return;
+  try {
+    currentProfile = await safeFetchJson(`${API_BASE}/employees/profile`, {
+      headers: { Authorization: `Bearer ${authToken}` }
+    });
+    renderProfile();
+  } catch (err) {
+    console.warn('Erreur chargement profil:', err);
+  }
+}
+
+async function fetchHours() {
+  if (!authToken) return;
+  try {
+    currentHours = await safeFetchJson(`${API_BASE}/employees/hours`, {
+      headers: { Authorization: `Bearer ${authToken}` }
+    });
+    renderHours();
+    if (currentProfile) renderProfile(); // rafraîchit les cartes KPI du profil dès que les heures sont disponibles
+  } catch (err) {
+    console.warn('Erreur chargement heures:', err);
+  }
+}
+
+function renderProfile() {
+  const container = document.getElementById('profile-content');
+  if (!container || !currentProfile) return;
+  const p = currentProfile;
+
+  // Avatar with role badge
+  const roleBadge = ['ADMIN', 'PRODUCTION', 'STOCK', 'CASHIER'].includes(p.user_role) ? p.user_role : 'EMPLOYEE';
+  const avatarClass = `avatar role-${roleBadge.toLowerCase()}`;
+  const userInitial = (p.user_name || 'U').trim().charAt(0).toUpperCase() || 'U';
+
+  // ── Cartes KPI (refonte ERP) ──────────────────────────────────────
+  // Réutilisation stricte des données déjà disponibles : on privilégie les
+  // champs du profil (currentProfile), sinon on dérive de currentHours déjà
+  // chargé (plannings du mois courant + congés en attente). Aucune nouvelle
+  // API, aucun calcul serveur supplémentaire — uniquement de l'agrégation UI.
+  const monthPrefix = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  };
+  const monthHoursFromSchedules = () =>
+    currentHours && Array.isArray(currentHours.schedules)
+      ? currentHours.schedules
+          .filter((s) => s.shift_start && String(s.shift_start).startsWith(monthPrefix()))
+          .reduce((acc, s) => acc + (Number(s.hours) || 0), 0)
+      : null;
+  const pendingLeavesFromHours = () =>
+    currentHours && Array.isArray(currentHours.leaves)
+      ? currentHours.leaves.filter((l) => l.status === 'PENDING').length
+      : null;
+
+  const monthlyHours = p.monthly_hours !== undefined ? p.monthly_hours : monthHoursFromSchedules();
+  const leaveBalance = p.leave_balance !== undefined ? p.leave_balance : null;
+  const pendingLeaves = p.pending_leaves !== undefined ? p.pending_leaves : pendingLeavesFromHours();
+
+  const monthlyHoursText = monthlyHours !== null && monthlyHours !== undefined ? Number(monthlyHours).toFixed(1) : '—';
+  const leaveBalanceText = leaveBalance !== null && leaveBalance !== undefined ? leaveBalance : '—';
+  const pendingLeavesText = pendingLeaves !== null && pendingLeaves !== undefined ? pendingLeaves : '—';
+
+  container.innerHTML = `
+    <div class="profile-header">
+      <div class="avatar-wrapper">
+        <div class="avatar ${avatarClass}">
+          ${userInitial}
+        </div>
+        <span class="role-badge ${roleBadge.toLowerCase()}">${roleBadge}</span>
+      </div>
+      <div class="profile-info">
+        <h2>${p.user_name || 'Utilisateur'}</h2>
+        <p class="profile-email">${p.user_email || ''}</p>
+      </div>
+    </div>
+
+    <div class="profile-actions">
+      <button class="btn btn-secondary btn-sm" onclick="openChangePasswordModal()">🔐 Modifier mon mot de passe</button>
+      <button class="btn btn-primary btn-sm" onclick="openEditProfileModal()">👤 Modifier mes informations</button>
+    </div>
+
+    <div class="profile-cards">
+      <div class="profile-card">
+        <div class="card-header">
+          <span class="card-icon">⏱️</span>
+          <span class="card-title">Heures du mois</span>
+        </div>
+        <div class="card-value" id="monthly-hours-value">${monthlyHoursText}</div>
+        <div class="card-label">heures</div>
+      </div>
+      <div class="profile-card">
+        <div class="card-header">
+          <span class="card-icon">📅</span>
+          <span class="card-title">Congés restants</span>
+        </div>
+        <div class="card-value" id="leave-balance-value">${leaveBalanceText}</div>
+        <div class="card-label">jours</div>
+      </div>
+      <div class="profile-card">
+        <div class="card-header">
+          <span class="card-icon">⏳</span>
+          <span class="card-title">Demandes en attente</span>
+        </div>
+        <div class="card-value" id="pending-leaves-value">${pendingLeavesText}</div>
+        <div class="card-label">en cours</div>
+      </div>
+    </div>
+
+    <div class="profile-details">
+      <div class="profile-detail-row">
+        <label>Nom complet</label>
+        <span>${p.user_name || 'Non spécifié'}</span>
+      </div>
+      <div class="profile-detail-row">
+        <label>Email</label>
+        <span>${p.user_email || 'Non spécifié'}</span>
+      </div>
+      <div class="profile-detail-row">
+        <label>Téléphone</label>
+        <span>${p.phone || 'Non spécifié'}</span>
+      </div>
+      <div class="profile-detail-row">
+        <label>Poste</label>
+        <span>${p.job_title || 'Non spécifié'}</span>
+      </div>
+      <div class="profile-detail-row">
+        <label>Rôle</label>
+        <span>${p.user_role || 'Non spécifié'}</span>
+      </div>
+      <div class="profile-detail-row">
+        <label>Date d'embauche</label>
+        <span>${p.hire_date || 'Non spécifié'}</span>
+      </div>
+      <div class="profile-detail-row">
+        <label>Adresse</label>
+        <span>${p.address || 'Non spécifié'}</span>
+      </div>
+    </div>
+  `;
+}
+
+// ── Boutons d'action de la fiche « Mon Profil » (refonte ERP) ──────────
+// Aucune API backend dédiée n'existe encore pour le changement de mot de
+// passe ou l'auto-édition du profil (auth.js n'expose que le login ;
+// employees.js ne gère le CRUD employé que pour ADMIN). On conserve des
+// boutons informatifs au lieu d'appeler un endpoint inexistant — conforme
+// aux contraintes : « aucun changement backend / aucune nouvelle API /
+// modifications minimales ».
+// Ouvre la modale de changement de mot de passe (self-service).
+// La route PUT /api/employees/me/password (protégée par requireAuth) ne
+// modifie QUE le mot de passe de l'utilisateur authentifié (req.user.id) —
+// un id fourni dans le body serait ignoré côté serveur.
+function openChangePasswordModal() {
+  const modal = document.getElementById('change-password-modal');
+  if (!modal) {
+    showToast('Modal de changement de mot de passe introuvable.', true);
+    return;
+  }
+  // Réinitialise les champs à chaque ouverture
+  document.getElementById('cp-current-password').value = '';
+  document.getElementById('cp-new-password').value = '';
+  modal.classList.remove('hidden');
+  document.getElementById('cp-current-password').focus();
+}
+
+// Soumission du formulaire de changement de mot de passe.
+async function submitChangePassword() {
+  const currentPassword = document.getElementById('cp-current-password').value;
+  const newPassword = document.getElementById('cp-new-password').value;
+
+  if (!currentPassword) {
+    showToast('Veuillez saisir votre mot de passe actuel.', true);
+    return;
+  }
+  if (newPassword.length < 8) {
+    showToast('Le nouveau mot de passe doit contenir au moins 8 caractères.', true);
+    return;
+  }
+  if (newPassword === currentPassword) {
+    showToast('Le nouveau mot de passe doit être différent du mot de passe actuel.', true);
+    return;
+  }
+  if (!authToken) {
+    showToast('Veuillez vous connecter.', true);
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/employees/me/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
+
+    if (res.status === 204) {
+      closeModal('change-password-modal');
+      showToast('Mot de passe modifié avec succès.');
+      return;
+    }
+
+    let message = `Erreur lors du changement de mot de passe (HTTP ${res.status}).`;
+    try {
+      const data = await res.json();
+      if (data && data.error) message = data.error;
+    } catch (_) { /* le corps n'est pas du JSON exploitable */ }
+
+    if (res.status === 401) {
+      showToast('Mot de passe actuel incorrect.', true);
+    } else if (res.status === 400) {
+      showToast(message, true);
+    } else {
+      showToast(message, true);
+    }
+  } catch (err) {
+    showToast('Impossible de contacter le serveur.', true);
+  }
+}
+
+// Ouvre la modale « Modifier mes informations » (self-service).
+// Seuls phone / address sont éditables ; l'employé est résolu côté serveur par
+// req.user.id uniquement — aucun id n'est envoyé depuis le client.
+function openEditProfileModal() {
+  if (!authToken) return showToast('Veuillez vous connecter.', true);
+  const modal = document.getElementById('edit-profile-modal');
+  if (!modal) {
+    showToast('Modal de modification du profil introuvable.', true);
+    return;
+  }
+  // Pré-remplissage avec les valeurs actuelles du profil chargé.
+  const p = currentProfile || {};
+  document.getElementById('edit-profile-phone').value = p.phone || '';
+  document.getElementById('edit-profile-address').value = p.address || '';
+  modal.classList.remove('hidden');
+}
+
+// Envoie la mise à jour self-service du profil (phone / address).
+// Réutilise fetchProfile() (existant) pour rafraîchir l'affichage — pas de
+// second mécanisme de fetch.
+async function handleSaveEditProfile(e) {
+  e.preventDefault();
+  if (!authToken) return showToast('Veuillez vous connecter.', true);
+
+  const phone = document.getElementById('edit-profile-phone').value.trim();
+  const address = document.getElementById('edit-profile-address').value.trim();
+
+  if (!phone && !address) {
+    return showToast('Saisissez au moins une information à modifier.', true);
+  }
+
+  // Seuls ces deux champs whitelistés sont transmis au backend.
+  const payload = {};
+  if (phone) payload.phone = phone;
+  if (address) payload.address = address;
+
+  try {
+    await safeFetchJson(`${API_BASE}/employees/me/profile`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify(payload)
+    });
+
+    showToast('Informations mises à jour');
+    closeModal('edit-profile-modal');
+    await fetchProfile();
+  } catch (err) {
+    showToast(err.message, true);
+  }
+}
+
+function renderHours() {
+  const container = document.getElementById('hours-content');
+  if (!container || !currentHours) return;
+  const h = currentHours;
+  const scheduleRows = (h.schedules || []).map((s) => {
+    const start = s.shift_start ? new Date(s.shift_start).toLocaleString('fr-FR') : '—';
+    const end = s.shift_end ? new Date(s.shift_end).toLocaleString('fr-FR') : '—';
+    const hours = (s.hours || 0).toFixed(1);
+    return `<tr><td>${start}</td><td>${end}</td><td>${hours} h</td><td>${s.notes || '—'}</td></tr>`;
+  }).join('');
+
+  const leaveRows = (h.leaves || []).map((l) => {
+    return `<tr><td>${l.start_date || '—'}</td><td>${l.end_date || '—'}</td><td>${l.status || '—'}</td><td>${l.reason || '—'}</td></tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="hours-summary">
+      <h3>Total heures travaillées</h3>
+      <p class="hours-total">${h.total_hours.toFixed(1)} h</p>
+    </div>
+    <h4>Planning</h4>
+    <table class="hours-table"><thead><tr><th>Début</th><th>Fin</th><th>Heures</th><th>Notes</th></tr></thead><tbody>${scheduleRows || '<tr><td colspan="4">Aucun planning.</td></tr>'}</tbody></table>
+    <h4>Congés</h4>
+    <table class="hours-table"><thead><tr><th>Début</th><th>Fin</th><th>Statut</th><th>Motif</th></tr></thead><tbody>${leaveRows || '<tr><td colspan="4">Aucun congé.</td></tr>'}</tbody></table>`;
 }
 
 async function fetchSuppliers() {
@@ -1511,18 +2223,18 @@ function openScheduleModal() {
 }
 
 function openLeaveModal() {
-  if (!requireRoleFor('ADMIN', 'EMPLOYEE')) return;
+  if (!requireRoleFor('ADMIN', 'PRODUCTION', 'CASHIER', 'STOCK', 'EMPLOYEE')) return;
   if (!employeesList || employeesList.length === 0) {
     showToast('Chargez d’abord les employés.', true);
     return;
   }
   populateEmployeeSelects();
   document.getElementById('leave-form').reset();
-  // EMPLOYEE: the employee selector is hidden for this role, so pre-select their
+    // Non-ADMIN: the employee selector is hidden for this role, so pre-select their
   // own profile. This both satisfies the field's `required` constraint (otherwise
   // native HTML5 validation silently blocks form submission) and guarantees the
   // request is created in the employee's own name.
-  if (hasAnyRole('EMPLOYEE')) {
+  if (!hasAnyRole('ADMIN')) {
     const own = employeesList.find((emp) => emp.user_id === currentUser.id) || employeesList[0];
     const sel = document.getElementById('leave-employee-select');
     if (sel && own) sel.value = String(own.id);
@@ -1574,6 +2286,15 @@ async function handleSaveEmployee(e) {
     address: document.getElementById('employee-address').value || null
   };
   const password = document.getElementById('employee-password').value;
+
+  // En CRÉATION, le mot de passe est obligatoire (min 8) : sans lui, aucun compte
+  // de connexion utilisable ne serait créé dans `users` (le login ne lit que cette
+  // table + password_hash bcrypt). On bloque la soumission côté client AVANT
+  // d'atteindre la route — même si le required HTML était contourné.
+  if (!id && (!password || password.length < 8)) {
+    return showToast('Un mot de passe de 8 caractères minimum est requis à la création.', true);
+  }
+
   if (password) {
     payload.password = password;
   }
@@ -1624,14 +2345,14 @@ async function handleSaveSchedule(e) {
 
 async function handleSaveLeave(e) {
   e.preventDefault();
-  if (!requireRoleFor('ADMIN', 'EMPLOYEE')) return;
+  if (!requireRoleFor('ADMIN', 'PRODUCTION', 'CASHIER', 'STOCK', 'EMPLOYEE')) return;
   if (!authToken) return showToast('Veuillez vous connecter.', true);
 
   let employeeId = parseInt(document.getElementById('leave-employee-select').value, 10);
   let status = document.getElementById('leave-status').value;
 
-  // EMPLOYEE always submits a leave request in their own name, forced to PENDING.
-  if (hasAnyRole('EMPLOYEE')) {
+    // Non-ADMIN always submits a leave request in their own name, forced to PENDING.
+  if (!hasAnyRole('ADMIN')) {
     const own = employeesList.find((emp) => emp.user_id === currentUser.id) || employeesList[0];
     if (own) employeeId = own.id;
     status = 'PENDING';
@@ -1655,6 +2376,62 @@ async function handleSaveLeave(e) {
     showToast('Congé enregistré');
     closeModal('leave-modal');
     fetchLeaves();
+  } catch (err) {
+    showToast(err.message, true);
+  }
+}
+
+// Ouvre la modale self-service « Demander un congé » (écran Mes Heures).
+// L'employé est résolu côté serveur par req.user.id uniquement — aucun
+// employee_id n'est envoyé depuis le client.
+function openMyLeaveModal() {
+  if (!authToken) return showToast('Veuillez vous connecter.', true);
+  const modal = document.getElementById('my-leave-modal');
+  if (!modal) {
+    showToast('Modal de demande de congé introuvable.', true);
+    return;
+  }
+  document.getElementById('my-leave-form').reset();
+  modal.classList.remove('hidden');
+}
+
+// Envoie la demande de congé self-service.
+// Réutilise fetchHours() (existant) pour rafraîchir la liste des congés — pas de
+// second mécanisme de fetch.
+async function handleSaveMyLeave(e) {
+  e.preventDefault();
+  if (!authToken) return showToast('Veuillez vous connecter.', true);
+
+  const startValue = document.getElementById('my-leave-start').value;
+  const endValue = document.getElementById('my-leave-end').value;
+  const reason = document.getElementById('my-leave-reason').value.trim() || null;
+
+  if (!startValue || !endValue) {
+    return showToast('Les dates de début et de fin sont requises.', true);
+  }
+
+  // Validation UI minimale — le backend revalide aussi.
+  const start = new Date(`${startValue}T00:00:00`);
+  const end = new Date(`${endValue}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (start > end) {
+    return showToast('La date de début doit être antérieure ou égale à la date de fin.', true);
+  }
+  if (start < today) {
+    return showToast('La date de début ne peut pas être dans le passé.', true);
+  }
+
+  try {
+    await safeFetchJson(`${API_BASE}/employees/leaves/me`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ start_date: startValue, end_date: endValue, reason })
+    });
+
+    showToast('Demande de congé envoyée');
+    closeModal('my-leave-modal');
+    await fetchHours();
   } catch (err) {
     showToast(err.message, true);
   }
@@ -1876,7 +2653,7 @@ function renderProducts() {
       <div>
         <div class="product-title">
           <h3>${product.name}</h3>
-          <span class="price-tag">${parseFloat(product.price).toFixed(2)} €</span>
+          <span class="price-tag">${parseFloat(product.price).toFixed(2)} DT</span>
         </div>
         <p style="color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px;">${product.description || ''}</p>
         <div style="margin-top: 10px;">
@@ -2080,7 +2857,7 @@ function renderIngredients() {
       <td><strong>${ing.name}</strong></td>
       <td><strong>${parseFloat(ing.current_stock).toFixed(2)}</strong> ${ing.unit}</td>
       <td>${parseFloat(ing.minimum_stock).toFixed(2)} ${ing.unit}</td>
-      <td>${parseFloat(ing.cost_per_unit || 0).toFixed(2)} €</td>
+      <td>${parseFloat(ing.cost_per_unit || 0).toFixed(2)} DT</td>
       <td>${ing.expiration_date || 'Non spécifiée'}</td>
       <td>${ing.supplier_name || 'N/A'}</td>
       <td><span class="stock-badge ${badgeClass}">${badgeText}</span></td>
@@ -2454,7 +3231,7 @@ function renderPurchaseOrders() {
     tr.innerHTML = `
       <td>${po.id}</td>
       <td><strong>${po.supplier_name || 'Fournisseur #' + po.supplier_id}</strong></td>
-      <td><strong>${parseFloat(po.total_cost || 0).toFixed(2)} €</strong></td>
+      <td><strong>${parseFloat(po.total_cost || 0).toFixed(2)} DT</strong></td>
       <td><span class="stock-badge ${badgeClass}">${po.status}</span></td>
       <td>${createdAt}</td>
       <td>${receivedAt}</td>
@@ -2524,13 +3301,13 @@ function addPoItemRow(ingredientId = '', quantityOrdered = '', unitCost = '') {
   ingredientsList.forEach((ing) => {
     const sel = ing.id == ingredientId ? 'selected' : '';
     const cost = ing.cost_per_unit || 0;
-    optionsHtml += `<option value="${ing.id}" data-cost="${cost}" ${sel}>${ing.name} (${ing.unit}) — Ref cost: ${parseFloat(cost).toFixed(2)} €</option>`;
+    optionsHtml += `<option value="${ing.id}" data-cost="${cost}" ${sel}>${ing.name} (${ing.unit}) — Ref cost: ${parseFloat(cost).toFixed(2)} DT</option>`;
   });
 
   row.innerHTML = `
     <select class="form-control po-ing-select" style="flex: 2;" required>${optionsHtml}</select>
     <input type="number" step="0.001" min="0.001" class="form-control po-qty-input" placeholder="Qté" value="${quantityOrdered}" style="flex: 1;" required>
-    <input type="number" step="0.01" min="0" class="form-control po-cost-input" placeholder="Coût Unitaire (€)" value="${unitCost}" style="flex: 1;" required>
+    <input type="number" step="0.01" min="0" class="form-control po-cost-input" placeholder="Coût Unitaire (DT)" value="${unitCost}" style="flex: 1;" required>
     <button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove(); updatePoSummary();">❌</button>
   `;
 
@@ -2560,7 +3337,7 @@ function updatePoSummary() {
     total += qty * cost;
   });
   const summaryEl = document.getElementById('po-total-cost-display');
-  if (summaryEl) summaryEl.textContent = `${total.toFixed(2)} €`;
+  if (summaryEl) summaryEl.textContent = `${total.toFixed(2)} DT`;
 }
 
 async function handleSavePurchaseOrder(e) {
@@ -2627,7 +3404,7 @@ async function openPurchaseOrderDetailModal(poId) {
       <div class="card margin-top-10">
         <p>Fournisseur: <strong>${po.supplier_name || 'Fournisseur #' + po.supplier_id}</strong></p>
         <p>Statut: <span class="stock-badge ${badgeClass}">${po.status}</span></p>
-        <p>Total Coût: <strong>${parseFloat(po.total_cost || 0).toFixed(2)} €</strong></p>
+        <p>Total Coût: <strong>${parseFloat(po.total_cost || 0).toFixed(2)} DT</strong></p>
         <p>Créé le: ${po.created_at ? new Date(po.created_at).toLocaleString('fr-FR') : '—'}</p>
         <p>Réceptionné le: ${po.received_at ? new Date(po.received_at).toLocaleString('fr-FR') : '—'}</p>
       </div>
@@ -2649,8 +3426,8 @@ async function openPurchaseOrderDetailModal(poId) {
               <td><strong>${it.ingredient_name || 'Ingrédient #' + it.ingredient_id}</strong></td>
               <td>${parseFloat(it.quantity_ordered).toFixed(2)} ${it.unit || ''}</td>
               <td>${parseFloat(it.quantity_received || 0).toFixed(2)} ${it.unit || ''}</td>
-              <td>${parseFloat(it.unit_cost).toFixed(2)} €</td>
-              <td><strong>${(parseFloat(it.quantity_ordered) * parseFloat(it.unit_cost)).toFixed(2)} €</strong></td>
+              <td>${parseFloat(it.unit_cost).toFixed(2)} DT</td>
+              <td><strong>${(parseFloat(it.quantity_ordered) * parseFloat(it.unit_cost)).toFixed(2)} DT</strong></td>
             </tr>
           `).join('')}
         </tbody>
@@ -2785,7 +3562,7 @@ function renderCustomerOrders() {
       <td><strong>${co.customer_name}</strong></td>
       <td>${co.customer_phone || '—'}</td>
       <td><strong>${co.delivery_date}</strong></td>
-      <td><strong>${parseFloat(co.total_price || 0).toFixed(2)} €</strong></td>
+      <td><strong>${parseFloat(co.total_price || 0).toFixed(2)} DT</strong></td>
       <td>${co.special_instructions || '—'}</td>
       <td><span class="stock-badge ${badgeClass}">${co.status}</span></td>
       <td>${actionBtns}</td>
@@ -2848,7 +3625,7 @@ function addCoItemRow(productId = '', quantity = 1) {
   productsList.forEach((prod) => {
     const sel = prod.id == productId ? 'selected' : '';
     const price = prod.price || 0;
-    optionsHtml += `<option value="${prod.id}" data-price="${price}" ${sel}>${prod.name} — ${parseFloat(price).toFixed(2)} €</option>`;
+    optionsHtml += `<option value="${prod.id}" data-price="${price}" ${sel}>${prod.name} — ${parseFloat(price).toFixed(2)} DT</option>`;
   });
 
   row.innerHTML = `
@@ -2877,7 +3654,7 @@ function updateCoSummary() {
     total += qty * price;
   });
   const summaryEl = document.getElementById('co-total-price-display');
-  if (summaryEl) summaryEl.textContent = `${total.toFixed(2)} €`;
+  if (summaryEl) summaryEl.textContent = `${total.toFixed(2)} DT`;
 }
 
 async function handleSaveCustomerOrder(e) {
@@ -2954,7 +3731,7 @@ async function openCustomerOrderDetailModal(coId) {
         <p>Client: <strong>${co.customer_name}</strong> (${co.customer_phone || 'Pas de téléphone'})</p>
         <p>Date de Livraison: <strong>${co.delivery_date}</strong></p>
         <p>Statut: <span class="stock-badge ${badgeClass}">${co.status}</span></p>
-        <p>Total Prix: <strong>${parseFloat(co.total_price || 0).toFixed(2)} €</strong></p>
+        <p>Total Prix: <strong>${parseFloat(co.total_price || 0).toFixed(2)} DT</strong></p>
         ${co.special_instructions ? `<p style="margin-top: 8px;"><em>Note: ${co.special_instructions}</em></p>` : ''}
       </div>
 
@@ -2973,8 +3750,8 @@ async function openCustomerOrderDetailModal(coId) {
             <tr>
               <td><strong>${it.product_name || 'Produit #' + it.product_id}</strong></td>
               <td>${it.quantity}</td>
-              <td>${parseFloat(it.unit_price).toFixed(2)} €</td>
-              <td><strong>${parseFloat(it.subtotal).toFixed(2)} €</strong></td>
+              <td>${parseFloat(it.unit_price).toFixed(2)} DT</td>
+              <td><strong>${parseFloat(it.subtotal).toFixed(2)} DT</strong></td>
             </tr>
           `).join('')}
         </tbody>
@@ -3039,5 +3816,360 @@ async function deleteCustomerOrder(id) {
   } catch (err) {
     showToast(err.message, true);
   }
+}
+
+
+// ================================================================
+// NOTIFICATION CENTER (2026 UI/UX) — agrégateur client, aucune
+// modification de logique métier. Sources = endpoints existants :
+// /api/stocks/alerts (stock + péremption), /ai/anomalies (IA),
+// commandes déjà chargées en mémoire, et une entrée système.
+// ================================================================
+const NOTIF_CATEGORY_LABELS = {
+  stock: 'Stock critique',
+  expiry: 'Péremptions',
+  orders: 'Commandes',
+  ia: 'IA',
+  rh: 'RH',
+  profile: 'Profil',
+  schedule: 'Planning',
+  leave: 'Congés',
+  system: 'Système'
+};
+
+// Filter chips shown in the panel — ordered and RBAC-gated: a role only ever sees
+// the categories for which it holds at least one permission. 'system' (session
+// info) stays visible for every authenticated role.
+const NOTIF_CATEGORY_ORDER = ['stock', 'expiry', 'orders', 'ia', 'rh', 'system'];
+const NOTIF_CATEGORY_PERMISSIONS = {
+  stock: ['view_stock_alerts'],
+  expiry: ['view_stock_alerts'],
+  orders: ['view_purchase_orders', 'view_customer_orders'],
+  ia: ['view_ai_anomalies'],
+  rh: ['view_profile', 'view_schedule', 'view_leave', 'view_hours'],
+  system: []
+};
+function notifCategoryAccessible(category) {
+  const perms = NOTIF_CATEGORY_PERMISSIONS[category];
+  if (!perms) return true;
+  if (perms.length === 0) return true; // system — informational for everyone
+  return perms.some((p) => can(p));
+}
+
+const NOTIF_READ_KEY = 'bakery_notif_read_v2';
+
+let __notifications = [];
+let __notifFilter = 'all';
+let __stockAlerts = null;
+let __aiAnomalies = [];
+let __serverNotifications = []; // RBAC-filtered server notifications (GET /api/notifications)
+let __notifFetching = false;    // re-entrancy guard for fetchServerNotifications
+let __notifRead = new Set(JSON.parse(localStorage.getItem(NOTIF_READ_KEY) || '[]'));
+
+function __persistNotifRead() {
+  try { localStorage.setItem(NOTIF_READ_KEY, JSON.stringify(Array.from(__notifRead))); } catch (e) { /* ignore */ }
+}
+
+function collectNotifications() {
+  const list = [];
+  const role = getRole();
+
+  // --- Server notifications (already RBAC-filtered at DB level) ---
+  (__serverNotifications || []).forEach((n) => {
+    list.push({
+      id: 'srv:' + n.id,
+      category: n.category || 'system',
+      title: n.title,
+      message: n.message || '',
+      priority: n.priority || 'Information',
+      date: new Date(n.created_at || n.date || Date.now()),
+      tab: n.target_tab || null,
+      is_read: n.is_read || false,
+    });
+  });
+
+  // --- Stock critique (ADMIN + STOCK only) ---
+  if (can('view_stock_alerts')) {
+    const lowStock = (__stockAlerts && Array.isArray(__stockAlerts.low_stock)) ? __stockAlerts.low_stock : [];
+    lowStock.forEach((ing) => {
+      list.push({
+        id: 'stock:' + ing.id,
+        category: 'stock',
+        title: 'Stock faible \u2014 ' + (ing.name || ('Ingr\u00e9dient #' + ing.id)),
+        message: 'Niveau actuel ' + ing.current_stock + ' ' + (ing.unit || '') + ' (minimum ' + ing.minimum_stock + ').',
+        priority: 'Critique',
+        date: new Date(),
+        tab: 'ingredients'
+      });
+    });
+  }
+
+  // --- Peremptions (ADMIN + STOCK only) ---
+  if (can('view_stock_alerts')) {
+    const expiring = (__stockAlerts && Array.isArray(__stockAlerts.expiring_soon)) ? __stockAlerts.expiring_soon : [];
+    expiring.forEach((ing) => {
+      list.push({
+        id: 'expiry:' + ing.id,
+        category: 'expiry',
+        title: 'Peremption proche \u2014 ' + (ing.name || ('Ingr\u00e9dient #' + ing.id)),
+        message: 'Expire le ' + (ing.expiration_date || 'sous peu') + '.',
+        priority: 'Important',
+        date: new Date(),
+        tab: 'ingredients'
+      });
+    });
+  }
+
+  // --- IA anomalies (ADMIN + STOCK only) ---
+  if (can('view_ai_anomalies')) {
+    __aiAnomalies.forEach((a) => {
+      const name = anomalyProductName(a.product_id);
+      const typeLabel = ANOMALY_TYPE_LABELS[a.type] || a.type;
+      const detail = (a.confidence && a.confidence.detail) ? a.confidence.detail : typeLabel;
+      list.push({
+        id: 'ia:' + a.product_id + ':' + a.type,
+        category: 'ia',
+        title: 'Anomalie IA \u2014 ' + name,
+        message: detail,
+        priority: a.severity === 'haute' ? 'Critique' : 'Important',
+        date: new Date(),
+        tab: 'dashboard'
+      });
+    });
+  }
+
+  // --- Commandes fournisseur (ADMIN + STOCK + PRODUCTION only) ---
+  if (can('view_purchase_orders')) {
+    (purchaseOrdersList || []).forEach((po) => {
+      if (po && po.status && po.status !== 'RECEIVED' && po.status !== 'CANCELLED') {
+        list.push({
+          id: 'orders:po:' + po.id,
+          category: 'orders',
+          title: 'Commande fournisseur #' + po.id,
+          message: 'Statut : ' + po.status + '.',
+          priority: 'Important',
+          date: new Date(),
+          tab: 'purchase-orders'
+        });
+      }
+    });
+  }
+
+  // --- Commandes client (ADMIN + CASHIER + PRODUCTION only) ---
+  if (can('view_customer_orders')) {
+    (customerOrdersList || []).forEach((co) => {
+      if (co && co.status && co.status !== 'DELIVERED' && co.status !== 'CANCELLED') {
+        list.push({
+          id: 'orders:co:' + co.id,
+          category: 'orders',
+          title: 'Commande client #' + co.id,
+          message: 'Statut : ' + co.status + '.',
+          priority: 'Important',
+          date: new Date(),
+          tab: 'customer-orders'
+        });
+      }
+    });
+  }
+
+  // --- System (informational -- all authenticated roles) ---
+  const statusEl = document.getElementById('api-status');
+  list.push({
+    id: 'system:session',
+    category: 'system',
+    title: 'Session',
+    message: currentUser
+      ? (currentUser.name + ' (' + currentUser.role + ') \u2014 ' + (statusEl ? statusEl.textContent : ''))
+      : 'Non connect\u00e9',
+    priority: 'Information',
+    date: new Date(),
+    tab: null
+  });
+
+  return list;
+}
+
+function notifUnreadCount() {
+  return __notifications.filter((n) => !__notifRead.has(n.id)).length;
+}
+
+function updateNotifBadge() {
+  const badge = document.getElementById('notif-badge');
+  if (!badge) return;
+  const n = notifUnreadCount();
+  badge.textContent = n;
+  badge.classList.toggle('hidden', n <= 0);
+}
+
+function markAllNotifRead() {
+  __notifications.forEach((n) => __notifRead.add(n.id));
+  __persistNotifRead();
+  renderNotifPanel();
+  updateNotifBadge();
+}
+
+/**
+ * Single delegated click handler for the notification panel (attached once on the
+ * stable #notif-panel element in initNotifications). Handles the filter chips,
+ * "Tout marquer lu" and the clickable notification items.
+ *
+ * Event delegation keeps clicks reliable: the previous implementation attached a
+ * new listener to every render and re-rendered the panel synchronously inside the
+ * click handler, which destroyed the clicked node mid-click ("element detached"),
+ * making notifications effectively unclickable.
+ */
+function handleNotifPanelClick(e) {
+  const panel = document.getElementById('notif-panel');
+  if (!panel) return;
+
+  // "Tout marquer lu"
+  if (e.target.closest('#notif-mark-all')) {
+    markAllNotifRead();
+    return;
+  }
+
+  // Category filter chip
+  const filterBtn = e.target.closest('.notif-filter');
+  if (filterBtn) {
+    __notifFilter = filterBtn.dataset.filter;
+    renderNotifPanel();
+    return;
+  }
+
+  // Notification item -> mark read (instant local feedback) + navigate to its tab
+  const item = e.target.closest('.notif-item');
+  if (item) {
+    const notif = __notifications.find((n) => n.id === item.dataset.id);
+    if (!notif) return;
+
+    if (!__notifRead.has(notif.id)) {
+      __notifRead.add(notif.id);
+      __persistNotifRead();
+      item.classList.remove('unread');
+      updateNotifBadge();
+    }
+
+    if (notif.tab) {
+      switchToTab(notif.tab);
+      panel.classList.add('hidden');
+    }
+  }
+}
+
+function renderNotifPanel() {
+  const panel = document.getElementById('notif-panel');
+  if (!panel) return;
+
+  // RBAC-driven chips: only the modules the connected role may access appear.
+  const visibleCats = ['all'].concat(NOTIF_CATEGORY_ORDER.filter(notifCategoryAccessible));
+  if (__notifFilter !== 'all' && !visibleCats.includes(__notifFilter)) {
+    __notifFilter = 'all'; // the previously selected category is no longer accessible
+  }
+
+  const filtered = __notifFilter === 'all'
+    ? __notifications
+    : __notifications.filter((n) => n.category === __notifFilter);
+
+  const filters = visibleCats
+    .map((c) => `<button class="notif-filter ${__notifFilter === c ? 'active' : ''}" data-filter="${c}">${c === 'all' ? 'Tout' : escapeHtml(NOTIF_CATEGORY_LABELS[c] || c)}</button>`)
+    .join('');
+
+  const items = filtered.length
+    ? filtered.map((n) => {
+        const read = __notifRead.has(n.id);
+        const prio = n.priority || 'Information';
+        return `
+        <div class="notif-item ${read ? '' : 'unread'} prio-${prio}" data-id="${escapeHtml(n.id)}">
+          <div class="notif-item-body">
+            <div class="notif-item-title">${escapeHtml(n.title)} <span class="notif-prio ${prio}">${escapeHtml(prio)}</span></div>
+            <div class="notif-item-msg">${escapeHtml(n.message)}</div>
+            <div class="notif-item-meta">
+              <span>${escapeHtml(NOTIF_CATEGORY_LABELS[n.category] || n.category)}</span>
+              <span>${new Date(n.date).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+          </div>
+        </div>`;
+      }).join('')
+    : '<div class="notif-empty">Aucune notification dans cette catégorie.</div>';
+
+  panel.innerHTML = `
+    <div class="notif-header">
+      <strong>🔔 Notifications</strong>
+      <div class="notif-header-actions">
+        <button class="notif-mark-all" id="notif-mark-all" type="button">Tout marquer lu</button>
+      </div>
+    </div>
+    <div class="notif-filters" id="notif-filters">${filters}</div>
+    <div class="notif-list">${items}</div>`;
+
+  // No per-node listeners here — clicks go through the single delegated handler
+  // attached once in initNotifications().
+}
+
+/**
+ * Re-collect + render the local notifications (badge + open panel) WITHOUT any
+ * network call. Kept separate from refreshNotifications() so the server fetch can
+ * re-render without triggering another fetch — the old recursion
+ * (refreshNotifications -> fetchServerNotifications -> refreshNotifications ...)
+ * created an infinite re-render loop that rebuilt the panel hundreds of times per
+ * second and made every notification click fail ("element detached").
+ */
+function renderNotificationCenter() {
+  __notifications = collectNotifications();
+  updateNotifBadge();
+  const panel = document.getElementById('notif-panel');
+  if (panel && !panel.classList.contains('hidden')) renderNotifPanel();
+}
+
+function refreshNotifications() {
+  if (authToken) {
+    fetchServerNotifications().catch(() => {});
+  }
+  renderNotificationCenter();
+}
+
+async function fetchServerNotifications() {
+  if (!authToken) return;
+  if (__notifFetching) return; // re-entrancy guard (parallel rounds are pointless)
+  __notifFetching = true;
+  try {
+    __serverNotifications = await safeFetchJson(`${API_BASE}/notifications`, {
+      headers: { Authorization: `Bearer ${authToken}` }
+    });
+    // Mark server notifications as read/unread based on the stored set
+    __serverNotifications.forEach((n) => {
+      n.is_read = __notifRead.has('srv:' + n.id);
+    });
+    renderNotificationCenter();
+  } catch (err) {
+    // Backend notifications endpoint may not be available in all envs
+    console.warn('Erreur chargement notifications serveur:', err);
+  } finally {
+    __notifFetching = false;
+  }
+}
+
+function initNotifications() {
+  const bell = document.getElementById('notif-bell');
+  const panel = document.getElementById('notif-panel');
+  // Single delegated listener — survives every innerHTML rebuild of the panel.
+  if (panel) panel.addEventListener('click', handleNotifPanelClick);
+  if (bell) bell.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const hidden = panel.classList.toggle('hidden');
+    if (!hidden) renderNotifPanel();
+  });
+  document.addEventListener('pointerdown', (e) => {
+    // Outside-click-to-close. Registered on pointerdown (before any click-handler
+    // re-render) so e.target is still attached when we test containment — a click
+    // listener here would run AFTER renderNotifPanel() replaced the panel DOM on
+    // filter/item clicks, making contains() return false on the detached target
+    // and closing the panel right after the user opened/used it.
+    const wrap = document.getElementById('notif-wrap');
+    if (wrap && !wrap.contains(e.target) && panel && !panel.classList.contains('hidden')) {
+      panel.classList.add('hidden');
+    }
+  });
+  refreshNotifications();
 }
 

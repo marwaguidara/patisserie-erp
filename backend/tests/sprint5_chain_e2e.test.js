@@ -34,10 +34,10 @@ describe('Sprint 5 — Mandatory cross-module chain (Supplier → PO → Deliver
   let revenueBefore;
   let countBefore;
   const purchaseQty = 100.0; // kg of ingredient bought
-  const lotCost = 1.00; // € / kg
+  const lotCost = 1.00; // DT / kg
   const produceQty = 20; // units produced
   const recipeQty = 0.1; // kg of ingredient required per unit
-  const productPrice = 2.50; // € per unit
+  const productPrice = 2.50; // DT per unit
   const saleQty = 5; // units sold
 
   beforeAll(async () => {
@@ -210,7 +210,7 @@ describe('Sprint 5 — Mandatory cross-module chain (Supplier → PO → Deliver
     expect(saleRes.body.status).toEqual('PAID');
     expect(saleRes.body.payments).toHaveLength(1);
 
-    // Cost basis: recipeQty kg * lotCost per kg = 0.1 €/unit → margin = (2.50 - 0.10) * 5
+    // Cost basis: recipeQty kg * lotCost per kg = 0.1 DT/unit → margin = (2.50 - 0.10) * 5
     const item = saleRes.body.items[0];
     expect(parseFloat(item.cost_per_unit)).toBeCloseTo(recipeQty * lotCost, 4);
     expect(parseFloat(item.margin)).toBeCloseTo((productPrice - recipeQty * lotCost) * saleQty, 2);

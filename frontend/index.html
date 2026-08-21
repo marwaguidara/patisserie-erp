@@ -11,15 +11,43 @@
    <!-- Sprint 5 — Export lib (Excel) : single CDN dependency, no npm install -->
    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
-<body>
+  <body>
+  <!-- Landing Page (public entry point) — shown before login & after logout -->
+  <section id="landing-page" class="landing-page" aria-label="Page d'accueil publique">
+    <div class="landing-logo" aria-hidden="true">🥐</div>
+    <h1>Pâtisserie Platform</h1>
+    <p class="landing-subtitle">
+      ERP intégré pour la gestion complète de votre pâtisserie&nbsp;:
+      <strong>production</strong>, <strong>ventes</strong>, <strong>stocks</strong>,
+      <strong>achats</strong>, <strong>ressources humaines</strong> et
+      <strong>prévisions IA</strong>.
+    </p>
+    <div class="landing-features">
+      <span class="landing-feature">🔐 JWT &middot; RBAC</span>
+      <span class="landing-feature">📊 Reporting analytique</span>
+      <span class="landing-feature">🤖 IA prévisionnelle</span>
+    </div>
+    <button id="landing-login-btn" class="landing-cta"
+      onclick="document.getElementById('login-modal').classList.remove('hidden')">
+      Se Connecter
+    </button>
+    <p class="landing-footer">Accès réservé aux utilisateurs autorisés</p>
+  </section>
+
+  <div id="erp-app" class="hidden">
   <div class="app-container">
     <!-- Header -->
     <header class="app-header">
-      <div class="brand">
-        <div class="logo-icon">🥐</div>
-        <div>
-          <h1>Pâtisserie Platform</h1>
-          <span class="subtitle">Sprint 2 • Ventes, Caisse et Reporting</span>
+      <div class="header-left">
+        <button class="icon-btn" id="sidebar-toggle" title="Menu" aria-label="Ouvrir / fermer le menu">
+          <span class="hamburger">☰</span>
+        </button>
+        <div class="brand">
+          <div class="logo-icon">🥐</div>
+          <div>
+            <h1>Pâtisserie Platform</h1>
+            <span class="subtitle">Sprint 2 • Ventes, Caisse et Reporting</span>
+          </div>
         </div>
       </div>
       <div class="header-status">
@@ -27,6 +55,12 @@
           <span class="alert-pill low-stock" id="badge-low-stock">0 Stock Faible</span>
           <span class="alert-pill expiring" id="badge-expiring">0 Péremption</span>
           <span class="alert-pill anomaly hidden" id="badge-anomalies">0 Anomalie(s) IA</span>
+        </div>
+        <div class="notif-wrap" id="notif-wrap">
+          <button class="icon-btn notif-bell" id="notif-bell" title="Notifications" aria-label="Notifications">
+            🔔<span class="notif-badge hidden" id="notif-badge">0</span>
+          </button>
+          <div class="notif-panel hidden" id="notif-panel"></div>
         </div>
         <div class="status-indicator">
           <span class="dot active"></span>
@@ -38,22 +72,18 @@
       </div>
     </header>
 
-    <!-- Navigation Tabs -->
-    <nav class="nav-tabs">
-      <button class="tab-btn active" data-tab="catalog">📦 Catalogue Produits</button>
-      <button class="tab-btn" data-tab="ingredients">🌾 Stocks & Ingrédients</button>
-      <button class="tab-btn" data-tab="production">⚡ Atelier de Fabrication</button>
-      <button class="tab-btn" data-tab="sales">🛒 Ventes</button>
-      <button class="tab-btn" data-tab="employees">👥 Employés</button>
-      <button class="tab-btn" data-tab="suppliers">🚚 Fournisseurs</button>
-      <button class="tab-btn" data-tab="categories">🏷️ Catégories</button>
-      <button class="tab-btn" data-tab="purchase-orders">🚚 Commandes Fournisseurs</button>
-      <button class="tab-btn" data-tab="customer-orders">🎂 Commandes Clients</button>
-            <button class="tab-btn" data-tab="forecast">🔮 Prévision IA</button>
-            <button class="tab-btn" data-tab="ai-technical">⚙️ Informations techniques</button>
-      <button class="tab-btn" data-tab="segmentation">📊 Segmentation IA & Suggestions</button>
-      <button class="tab-btn" data-tab="dashboard">📊 Dashboard ADMIN</button>
-    </nav>
+    <div class="layout">
+      <aside class="sidenav" id="sidenav" aria-label="Navigation principale">
+        <div class="sidenav-header">
+          <span class="sidenav-brand">🥐 Plateforme</span>
+          <button class="sidenav-collapse-btn" id="sidebar-collapse" title="Réduire / Étendre">⤢</button>
+        </div>
+        <nav class="sidebar-nav" id="sidebar-nav" aria-label="Menu principal"></nav>
+        <div class="sidenav-footer">
+          <span class="text-muted">ERP Pâtisserie</span>
+        </div>
+      </aside>
+      <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
     <!-- Main Content -->
     <main class="main-content">
@@ -247,7 +277,7 @@
                 </div>
                 <div class="order-summary-row">
                   <span>Total</span>
-                  <strong id="sale-total-amount">0.00 €</strong>
+                  <strong id="sale-total-amount">0.00 DT</strong>
                 </div>
               </div>
 
@@ -286,10 +316,9 @@
                     <th>ID</th>
                     <th>Date</th>
                     <th>Client</th>
-                    <th>Montant</th>
+                    <th>Total</th>
                     <th>Articles</th>
-                    <th>Paiement</th>
-                    <th>Action</th>
+                    <th>Détails</th>
                   </tr>
                 </thead>
                 <tbody id="sales-history-tbody"></tbody>
@@ -508,6 +537,39 @@
         </div>
       </section>
 
+      <!-- Tab: Mon Profil (RH self-service — visible to every authenticated role) -->
+      <section id="tab-profile" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2>👤 Mon Profil</h2>
+            <p class="section-desc">Votre fiche personnel (données liées à votre compte).</p>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-secondary" id="refresh-profile">🔄 Actualiser</button>
+          </div>
+        </div>
+        <div id="profile-content">
+          <p class="text-muted">Chargement de votre profil…</p>
+        </div>
+      </section>
+
+      <!-- Tab: Mes Heures (RH self-service — plannings & congés propres à l'utilisateur) -->
+      <section id="tab-hours" class="tab-content">
+        <div class="section-header">
+          <div>
+            <h2>⏱️ Mes Heures</h2>
+            <p class="section-desc">Total des heures travaillées, plannings et congés (votre profil uniquement).</p>
+          </div>
+          <div class="action-buttons">
+            <button class="btn btn-primary" id="request-my-leave-btn">📅 Demander un congé</button>
+            <button class="btn btn-secondary" id="refresh-hours">🔄 Actualiser</button>
+          </div>
+        </div>
+        <div id="hours-content">
+          <p class="text-muted">Chargement de vos heures…</p>
+        </div>
+      </section>
+
       <!-- Tab 6: Suppliers -->
       <section id="tab-suppliers" class="tab-content">
         <div class="section-header">
@@ -594,7 +656,7 @@
               <tr>
                 <th>ID</th>
                 <th>Fournisseur</th>
-                <th>Total (€)</th>
+                <th>Total (DT)</th>
                 <th>Statut</th>
                 <th>Créé le</th>
                 <th>Réceptionné le</th>
@@ -639,7 +701,7 @@
                 <th>Client</th>
                 <th>Téléphone</th>
                 <th>Livraison Prévue</th>
-                <th>Total (€)</th>
+                <th>Total (DT)</th>
                 <th>Instructions</th>
                 <th>Statut</th>
                 <th>Actions</th>
@@ -650,7 +712,9 @@
         </div>
       </section>
     </main>
+        </div> <!-- /.layout -->
   </div>
+  </div> <!-- /.erp-app -->
 
   <!-- Modal: Create / Edit Product -->
   <div class="modal-overlay hidden" id="product-modal">
@@ -667,7 +731,7 @@
           <input type="text" id="product-description" class="form-control">
         </div>
         <div class="form-group">
-          <label>Prix de vente (€)</label>
+          <label>Prix de vente (DT)</label>
           <input type="number" step="0.01" id="product-price" class="form-control" required>
         </div>
         <div class="form-group">
@@ -740,7 +804,7 @@
           <input type="number" step="0.001" id="ingredient-min-stock" class="form-control" value="5.0" required>
         </div>
         <div class="form-group">
-          <label>Coût unitaire (€)</label>
+          <label>Coût unitaire (DT)</label>
           <input type="number" step="0.01" id="ingredient-cost" class="form-control" value="0.00">
         </div>
         <div class="form-group">
@@ -813,8 +877,8 @@
         </div>
         <div class="form-group">
           <label>Mot de passe</label>
-          <input type="password" id="employee-password" class="form-control" placeholder="Laisser vide pour conserver" minlength="6">
-          <small class="text-muted" style="font-size: 0.8rem;">Requis à la création. Laisser vide lors d'une modification.</small>
+          <input type="password" id="employee-password" class="form-control" placeholder="Laisser vide pour conserver" minlength="8" required>
+          <small class="text-muted" style="font-size: 0.8rem;">Requis à la création (8 caractères min). Laisser vide lors d'une modification.</small>
         </div>
         <div class="form-group">
           <label>Rôle</label>
@@ -916,6 +980,31 @@
     </div>
   </div>
 
+  <!-- Modal: Request My Leave (self-service — from "Mes Heures") -->
+  <div class="modal-overlay hidden" id="my-leave-modal">
+    <div class="modal">
+      <h2>Demander un congé</h2>
+      <form id="my-leave-form">
+        <div class="form-group">
+          <label>Date de début</label>
+          <input type="date" id="my-leave-start" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Date de fin</label>
+          <input type="date" id="my-leave-end" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Motif</label>
+          <input type="text" id="my-leave-reason" class="form-control">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('my-leave-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Envoyer la demande</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Modal: Supplier Management -->
   <div class="modal-overlay hidden" id="supplier-modal">
     <div class="modal modal-large">
@@ -980,7 +1069,7 @@
         <div class="order-summary card margin-top-10">
           <div class="order-summary-row">
             <span>Total Coût Estimé</span>
-            <strong id="po-total-cost-display">0.00 €</strong>
+            <strong id="po-total-cost-display">0.00 DT</strong>
           </div>
         </div>
         <div class="modal-actions margin-top-20">
@@ -1014,7 +1103,7 @@
         </div>
         <div class="form-group">
           <label>Téléphone</label>
-          <input type="text" id="co-customer-phone" class="form-control" placeholder="+33 6 12 34 56 78">
+          <input type="text" id="co-customer-phone" class="form-control" placeholder="+216 71 234 567">
         </div>
         <div class="form-group">
           <label>Date de Livraison Prévue</label>
@@ -1032,9 +1121,10 @@
         <div class="order-summary card margin-top-10">
           <div class="order-summary-row">
             <span>Total Commande</span>
-            <strong id="co-total-price-display">0.00 €</strong>
+            <strong id="co-total-price-display">0.00 DT</strong>
           </div>
         </div>
+  
         <div class="modal-actions margin-top-20">
           <button type="button" class="btn btn-secondary" onclick="closeModal('co-modal')">Annuler</button>
           <button type="submit" class="btn btn-primary">Enregistrer Commande</button>
@@ -1054,28 +1144,86 @@
     </div>
   </div>
 
+  <!-- Drawer: Détails vente (ERP — réutilise GET /api/sales/:id, aucun backend modifié) -->
+  <div class="drawer-overlay hidden" id="sale-detail-modal">
+    <aside class="sale-drawer" role="dialog" aria-modal="true" aria-labelledby="sd-title">
+      <div class="sale-drawer-header">
+        <div>
+          <h3 id="sd-title">Vente <span id="sd-sale-id"></span></h3>
+          <p class="text-muted">Détail de la transaction</p>
+        </div>
+        <button type="button" class="icon-btn" id="sd-close" aria-label="Fermer">✕</button>
+      </div>
+      <div class="sale-drawer-body" id="sale-detail-body"></div>
+      <div class="sale-drawer-footer">
+        <button type="button" class="btn btn-accent" id="sd-ticket">🎟️ Ticket</button>
+        <button type=button class=btn
+        <button type=button class=btn
+        <button type="button" class="btn btn-secondary" id="sd-close-bottom">Fermer</button>
+      </div>
+    </aside>
+  </div>
+
   <!-- Modal: Login -->
   <div class="modal-overlay hidden" id="login-modal">
     <div class="modal">
       <h2>Connexion Utilisateur</h2>
       <form id="login-form">
         <div class="form-group">
-          <label>Compte Utilisateur</label>
-          <select id="login-email-select" class="form-control">
-            <option value="admin@bakery.com">Administrateur (admin@bakery.com)</option>
-            <option value="production@bakery.com">Chef Pâtissier (production@bakery.com)</option>
-            <option value="cashier@bakery.com">Vendeur Caissier (cashier@bakery.com)</option>
-            <option value="stock@bakery.com">Gestionnaire Stock (stock@bakery.com)</option>
-            <option value="employe@bakery.com">Employé (employe@bakery.com)</option>
-          </select>
+          <label>Email</label>
+          <input type="email" id="login-email" class="form-control" placeholder="email@exemple.com" required>
         </div>
         <div class="form-group">
           <label>Mot de passe</label>
-          <input type="password" id="login-password" class="form-control" value="password123" required>
+          <input type="password" id="login-password" class="form-control" placeholder="Votre mot de passe" required>
         </div>
         <div class="modal-actions">
           <button type="button" class="btn btn-secondary" onclick="closeModal('login-modal')">Annuler</button>
           <button type="submit" class="btn btn-primary">Se Connecter</button>
+        </div>
+            </form>
+    </div>
+  </div>
+
+  <!-- Modal: Change Password -->
+  <div class="modal-overlay hidden" id="change-password-modal">
+    <div class="modal">
+      <h2>Modifier mon mot de passe</h2>
+      <form id="change-password-form">
+        <div class="form-group">
+          <label>Mot de passe actuel</label>
+          <input type="password" id="cp-current-password" class="form-control" required>
+        </div>
+        <div class="form-group">
+          <label>Nouveau mot de passe</label>
+          <input type="password" id="cp-new-password" class="form-control" minlength="8" required>
+          <small class="text-muted" style="font-size: 0.8rem;">8 caractères minimum.</small>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('change-password-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Edit My Profile (self-service — phone / address only) -->
+  <div class="modal-overlay hidden" id="edit-profile-modal">
+    <div class="modal">
+      <h2>Modifier mes informations</h2>
+      <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 12px;">Seuls le téléphone et l'adresse sont modifiables.</p>
+      <form id="edit-profile-form">
+        <div class="form-group">
+          <label>Téléphone</label>
+          <input type="text" id="edit-profile-phone" class="form-control">
+        </div>
+        <div class="form-group">
+          <label>Adresse</label>
+          <input type="text" id="edit-profile-address" class="form-control">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('edit-profile-modal')">Annuler</button>
+          <button type="submit" class="btn btn-primary">Enregistrer</button>
         </div>
       </form>
     </div>

@@ -9,6 +9,7 @@ const ingredientsRouter = require('./routes/ingredients');
 const categoriesRouter = require('./routes/categories');
 const salesRouter = require('./routes/sales');
 const employeesRouter = require('./routes/employees');
+const notificationsRouter = require('./routes/notifications');
 const suppliersRouter = require('./routes/suppliers');
 const purchaseOrdersRouter = require('./routes/purchaseOrders');
 const customerOrdersRouter = require('./routes/customerOrders');
@@ -42,6 +43,7 @@ app.use('/api/stocks', ingredientsRouter); // Stock alias
 app.use('/api/categories', categoriesRouter);
 app.use('/api/sales', salesRouter);
 app.use('/api/employees', employeesRouter);
+app.use('/api/notifications', notificationsRouter);
 app.use('/api/suppliers', suppliersRouter);
 app.use('/api/purchase-orders', purchaseOrdersRouter);
 app.use('/api/customer-orders', customerOrdersRouter);
