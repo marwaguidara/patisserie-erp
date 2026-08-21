@@ -5,6 +5,8 @@ const { invalidateAllAiCaches } = require('../services/aiCacheService');
 
 const router = express.Router();
 
+const { recordAudit } = require('../middleware/auditHelper');
+
 // POST /api/purchase-orders — create a supplier order (DRAFT)
 router.post('/', requireAuth, requireRole(['ADMIN', 'STOCK']), async (req, res, next) => {
   try {
@@ -14,6 +16,14 @@ router.post('/', requireAuth, requireRole(['ADMIN', 'STOCK']), async (req, res, 
       items,
       userId: req.user.id
     });
+
+    await recordAudit(req, {
+      action: 'CREATE_ORDER',
+      entity_type: 'purchase_order',
+      entity_id: order.id,
+      new_values: order
+    });
+
     res.status(201).json(order);
   } catch (err) {
     if (err.message.includes('requis') || err.message.includes('introuvable') || err.message.includes('invalide')) {
@@ -58,6 +68,13 @@ router.put('/:id/status', requireAuth, requireRole(['ADMIN', 'STOCK']), async (r
     if (status === 'RECEIVED') {
       invalidateAllAiCaches().catch((err) => {
         console.warn('[ai-cache] post-receipt invalidation error:', err.message);
+      });
+
+      await recordAudit(req, {
+        action: 'RECEIVE_ORDER',
+        entity_type: 'purchase_order',
+        entity_id: id,
+        new_values: order
       });
     }
     res.json(order);

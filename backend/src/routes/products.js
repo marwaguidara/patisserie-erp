@@ -90,6 +90,8 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+const { recordAudit } = require('../middleware/auditHelper');
+
 // POST /api/products
 router.post('/', requireAuth, requireRole(['ADMIN', 'PRODUCTION']), async (req, res, next) => {
   try {
@@ -119,6 +121,14 @@ router.post('/', requireAuth, requireRole(['ADMIN', 'PRODUCTION']), async (req, 
     }
 
     const created = await db('products').where({ id }).first();
+
+    await recordAudit(req, {
+      action: 'CREATE_PRODUCT',
+      entity_type: 'product',
+      entity_id: id,
+      new_values: created
+    });
+
     res.status(201).json(created);
   } catch (err) {
     next(err);
@@ -146,6 +156,15 @@ router.put('/:id', requireAuth, requireRole(['ADMIN', 'PRODUCTION']), async (req
     });
 
     const updated = await db('products').where({ id }).first();
+
+    await recordAudit(req, {
+      action: 'UPDATE_PRODUCT',
+      entity_type: 'product',
+      entity_id: id,
+      old_values: existing,
+      new_values: updated
+    });
+
     res.json(updated);
   } catch (err) {
     next(err);
@@ -162,6 +181,14 @@ router.delete('/:id', requireAuth, requireRole(['ADMIN']), async (req, res, next
     }
 
     await db('products').where({ id }).del();
+
+    await recordAudit(req, {
+      action: 'DELETE_PRODUCT',
+      entity_type: 'product',
+      entity_id: id,
+      old_values: existing
+    });
+
     res.json({ message: `Product ${id} deleted successfully.` });
   } catch (err) {
     next(err);

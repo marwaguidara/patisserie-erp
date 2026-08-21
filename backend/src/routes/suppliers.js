@@ -45,6 +45,8 @@ router.get('/:id', requireAuth, requireRole(['ADMIN', 'STOCK', 'PRODUCTION']), a
   }
 });
 
+const { recordAudit } = require('../middleware/auditHelper');
+
 // POST /api/suppliers
 router.post('/', requireAuth, requireRole(['ADMIN', 'STOCK']), async (req, res, next) => {
   try {
@@ -66,6 +68,14 @@ router.post('/', requireAuth, requireRole(['ADMIN', 'STOCK']), async (req, res, 
 
     const supplierId = typeof id === 'object' ? id.id : id;
     const created = await db('suppliers').where({ id: supplierId }).first();
+
+    await recordAudit(req, {
+      action: 'CREATE_SUPPLIER',
+      entity_type: 'supplier',
+      entity_id: supplierId,
+      new_values: created
+    });
+
     res.status(201).json(created);
   } catch (err) {
     next(err);

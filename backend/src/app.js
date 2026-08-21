@@ -16,9 +16,29 @@ const customerOrdersRouter = require('./routes/customerOrders');
 const analyticsRouter = require('./routes/analytics');
 const dashboardRouter = require('./routes/dashboard');
 
+const {
+  helmetMiddleware,
+  corsOptions,
+  authRateLimiter,
+  aiRateLimiter,
+  publicRateLimiter
+} = require('./middleware/security');
+
 const app = express();
 
-app.use(cors());
+// Désactivation de l'en-tête Express X-Powered-By
+app.disable('x-powered-by');
+
+// En-têtes de sécurité Helmet (nosniff, clickjacking X-Frame-Options, XSS)
+app.use(helmetMiddleware);
+
+// Configuration CORS sécurisée
+app.use(corsOptions);
+
+// Application des Rate Limiters
+app.use('/api/auth', authRateLimiter);
+app.use('/api', publicRateLimiter);
+
 app.use(express.json());
 
 // Serve static frontend files
@@ -35,6 +55,8 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+const auditLogsRouter = require('./routes/auditLogs');
+
 // API Routes
 app.use('/api/auth', authRouter);
 app.use('/api/products', productsRouter);
@@ -49,6 +71,8 @@ app.use('/api/purchase-orders', purchaseOrdersRouter);
 app.use('/api/customer-orders', customerOrdersRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/dashboard', dashboardRouter);
+app.use('/api/audit-logs', auditLogsRouter);
+app.use('/audit-logs', auditLogsRouter);
 
 const { requireAuth, requireRole } = require('./middleware/auth');
 
@@ -89,7 +113,8 @@ function proxyToAiService(req, res) {
 
 const aiRouter = express.Router();
 
-// Require authentication for all AI endpoints
+// Rate limiting et authentification pour tous les endpoints IA
+aiRouter.use(aiRateLimiter);
 aiRouter.use(requireAuth);
 
 // Health check endpoint
@@ -129,21 +154,15 @@ aiRouter.use(proxyToAiService);
 
 app.use('/ai', aiRouter);
 
+const errorHandler = require('./middleware/errorHandler');
+const { NotFoundError } = require('./utils/AppError');
+
 // 404 JSON Fallback Middleware for unmatched API routes
-app.use((req, res) => {
-  res.status(404).json({
-    error: `Endpoint '${req.method} ${req.originalUrl}' not found`,
-    status: 404
-  });
+app.use((req, res, next) => {
+  next(new NotFoundError(`Endpoint '${req.method} ${req.originalUrl}' not found`));
 });
 
 // Central Error Handling Middleware
-app.use((err, req, res, next) => {
-  console.error('Unhandled Error:', err);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
-    path: req.originalUrl
-  });
-});
+app.use(errorHandler);
 
 module.exports = app;

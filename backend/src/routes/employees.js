@@ -4,6 +4,7 @@ const db = require('../db/connection');
 const { requireAuth, requireRole, requirePermission } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 const { createEmployeeSchema, updateEmployeeSchema } = require('../validators/employee.schema');
+const { recordAudit } = require('../middleware/auditHelper');
 
 const router = express.Router();
 
@@ -472,6 +473,13 @@ router.post('/', requireAuth, requirePermission('crud_employee'), validate(creat
       return await trx('employees').where({ id: eid }).first();
     });
 
+    await recordAudit(req, {
+      action: 'CREATE_EMPLOYEE',
+      entity_type: 'employee',
+      entity_id: created.id,
+      new_values: created
+    });
+
     res.status(201).json(created);
   } catch (err) {
     if (err.message.includes('déjà utilisé')) {
@@ -617,6 +625,15 @@ router.put('/:id', requireAuth, requirePermission('crud_employee'), validate(upd
     await db('employees').where({ id }).update(updateData);
 
     const updated = await db('employees').where({ id }).first();
+
+    await recordAudit(req, {
+      action: 'UPDATE_EMPLOYEE',
+      entity_type: 'employee',
+      entity_id: id,
+      old_values: existing,
+      new_values: updated
+    });
+
     res.json(updated);
   } catch (err) {
     next(err);

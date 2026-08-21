@@ -8,6 +8,8 @@ const { loginSchema } = require('../validators/auth.schema');
 
 const router = express.Router();
 
+const { recordAudit } = require('../middleware/auditHelper');
+
 // POST /api/auth/login
 router.post('/login', validate(loginSchema), async (req, res, next) => {
   try {
@@ -32,6 +34,15 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
       { expiresIn: '24h' }
     );
 
+    // Audit de la connexion réussie (LOGIN)
+    await recordAudit(req, {
+      action: 'LOGIN',
+      entity_type: 'user',
+      entity_id: user.id,
+      user_id: user.id,
+      new_values: { email: user.email, role: user.role }
+    });
+
     res.json({
       token,
       user: {
@@ -41,6 +52,23 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
         role: user.role
       }
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/logout
+router.post('/logout', requireAuth, async (req, res, next) => {
+  try {
+    // Audit de la déconnexion (LOGOUT)
+    await recordAudit(req, {
+      action: 'LOGOUT',
+      entity_type: 'user',
+      entity_id: req.user.id,
+      user_id: req.user.id
+    });
+
+    res.json({ message: 'Logged out successfully' });
   } catch (err) {
     next(err);
   }

@@ -5,6 +5,8 @@ const SalesService = require('../services/salesService');
 const router = express.Router();
 console.log('Loaded routes/sales.js');
 
+const { recordAudit } = require('../middleware/auditHelper');
+
 // POST /api/sales
 router.post('/', requireAuth, requireRole(['ADMIN', 'CASHIER', 'PRODUCTION']), async (req, res, next) => {
   try {
@@ -18,6 +20,13 @@ router.post('/', requireAuth, requireRole(['ADMIN', 'CASHIER', 'PRODUCTION']), a
       customerName,
       customerPhone,
       userId: req.user.id
+    });
+
+    await recordAudit(req, {
+      action: 'CREATE_SALE',
+      entity_type: 'sale',
+      entity_id: sale.id,
+      new_values: sale
     });
 
     res.status(201).json(sale);

@@ -177,6 +177,8 @@ router.delete('/:id', requireAuth, requireRole(['ADMIN']), async (req, res, next
   }
 });
 
+const { recordAudit } = require('../middleware/auditHelper');
+
 // POST /api/ingredients/:id/movement or POST /api/stocks/movement
 router.post('/:id/movement', requireAuth, requireRole(['ADMIN', 'STOCK', 'PRODUCTION']), async (req, res, next) => {
   try {
@@ -191,6 +193,13 @@ router.post('/:id/movement', requireAuth, requireRole(['ADMIN', 'STOCK', 'PRODUC
       expirationDate: expiration_date,
       batchNumber: batch_number,
       userId: req.user ? req.user.id : null
+    });
+
+    await recordAudit(req, {
+      action: 'STOCK_ADJUSTMENT',
+      entity_type: 'ingredient',
+      entity_id: ingredientId,
+      new_values: { movement_type, quantity, reason, expiration_date, batch_number, updated_stock: updated.current_stock }
     });
 
     res.json({ message: 'Stock movement recorded successfully.', ingredient: updated });
