@@ -1,0 +1,25 @@
+# Root .dockerignore — build context is the repo root so that backend/
+# can COPY docs/openapi.yaml (single source of truth). Exclude everything
+# that should never be uploaded to the build context.
+.git
+.gitignore
+.github
+.venv
+.pytest_cache
+*.log
+node_modules
+**/node_modules
+backend/node_modules
+ai-service/.venv
+ai-service/data
+frontend/node_modules
+*.pyc
+__pycache__
+**/__pycache__
+.env
+.env.example
+.DS_Store
+*.png
+*.jpg
+*.docx
+~$*.docx

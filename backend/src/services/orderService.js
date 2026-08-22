@@ -52,7 +52,7 @@ class OrderService {
         status: 'DRAFT',
         total_cost: parseFloat(totalCost.toFixed(2)),
         created_by: userId || null
-      }).returning('id');
+      });
       const id = typeof poId === 'object' ? poId.id : poId;
 
       await trx('purchase_order_items').insert(
@@ -203,7 +203,7 @@ class OrderService {
         total_price: parseFloat(totalPrice.toFixed(2)),
         special_instructions: specialInstructions || null,
         user_id: userId || null
-      }).returning('id');
+      });
       const id = typeof coId === 'object' ? coId.id : coId;
 
       await trx('customer_order_items').insert(

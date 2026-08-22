@@ -107,7 +107,7 @@ router.post('/', requireAuth, requireRole(['ADMIN', 'PRODUCTION']), async (req, 
       price,
       category_id: category_id || null,
       stock_quantity: stock_quantity || 0
-    }).returning('id');
+    });
 
     const id = typeof productId === 'object' ? productId.id : productId;
 

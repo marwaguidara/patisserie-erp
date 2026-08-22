@@ -46,7 +46,7 @@ class NotificationService {
         target_url: payload.target_url || null,
         channels: payload.channels ? JSON.stringify(payload.channels) : null,
         metadata: payload.metadata ? JSON.stringify(payload.metadata) : null,
-      }).returning('id');
+      });
       const notifId = typeof id === 'object' ? id.id : id;
       notifications.push(notifId);
     }

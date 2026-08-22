@@ -4,7 +4,7 @@ This service provides the Phase 4 walking skeleton for the bakery intelligence l
 
 ## Read-only database access
 
-The service connects to the production PostgreSQL database in read-only mode through the `DATABASE_URL` configured in Docker Compose. It never writes to the core database.
+The service connects to the production MySQL database in read-only mode through the `DATABASE_URL` configured in Docker Compose. It never writes to the core database.
 
 ## Forecast contract
 

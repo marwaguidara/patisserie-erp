@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const { toMySQLDate } = require('../src/utils/datetimeUtils');
 
 exports.seed = async function(knex) {
   // Clear existing data in reverse order of foreign keys.
@@ -33,35 +34,35 @@ exports.seed = async function(knex) {
     email: 'admin@bakery.com',
     password_hash: passwordHash,
     role: 'ADMIN'
-  }).returning('id');
+  });
 
   const [prodUser] = await knex('users').insert({
     name: 'Chef Pâtissier',
     email: 'production@bakery.com',
     password_hash: passwordHash,
     role: 'PRODUCTION'
-  }).returning('id');
+  });
 
   const [cashierUser] = await knex('users').insert({
     name: 'Vendeuse Caissière',
     email: 'cashier@bakery.com',
     password_hash: passwordHash,
     role: 'CASHIER'
-  }).returning('id');
+  });
 
   const [stockUser] = await knex('users').insert({
     name: 'Gestionnaire Stock',
     email: 'stock@bakery.com',
     password_hash: passwordHash,
     role: 'STOCK'
-  }).returning('id');
+  });
 
   const [employeeUser] = await knex('users').insert({
     name: 'Employé Test',
     email: 'employe@bakery.com',
     password_hash: passwordHash,
     role: 'EMPLOYEE'
-  }).returning('id');
+  });
 
   const adminId = typeof adminUser === 'object' ? adminUser.id : adminUser;
   const prodId = typeof prodUser === 'object' ? prodUser.id : prodUser;
@@ -77,7 +78,7 @@ exports.seed = async function(knex) {
     job_title: 'Directeur',
     hire_date: '2025-01-10',
     address: '12 rue de la Pâtisserie, Paris'
-  }).returning('id');
+  });
 
   const [empProd] = await knex('employees').insert({
     user_id: prodId,
@@ -87,7 +88,7 @@ exports.seed = async function(knex) {
     job_title: 'Chef Pâtissier',
     hire_date: '2025-02-01',
     address: '12 rue de la Pâtisserie, Paris'
-  }).returning('id');
+  });
 
   const [empCashier] = await knex('employees').insert({
     user_id: cashierId,
@@ -97,7 +98,7 @@ exports.seed = async function(knex) {
     job_title: 'Vendeuse / Caissière',
     hire_date: '2025-03-15',
     address: '12 rue de la Pâtisserie, Paris'
-  }).returning('id');
+  });
 
   const [empEmployee] = await knex('employees').insert({
     user_id: employeeUserId,
@@ -107,7 +108,7 @@ exports.seed = async function(knex) {
     job_title: 'Employé polyvalent',
     hire_date: '2025-05-01',
     address: '12 rue de la Pâtisserie, Paris'
-  }).returning('id');
+  });
 
   const empAdminId = typeof empAdmin === 'object' ? empAdmin.id : empAdmin;
   const empProdId = typeof empProd === 'object' ? empProd.id : empProd;
@@ -118,12 +119,12 @@ exports.seed = async function(knex) {
   const [catViennoiserie] = await knex('categories').insert({
     name: 'Viennoiserie',
     description: 'Croissants, pains au chocolat, brioches'
-  }).returning('id');
+  });
 
   const [catPatisserie] = await knex('categories').insert({
     name: 'Pâtisserie',
     description: 'Gâteaux, tartes, éclairs'
-  }).returning('id');
+  });
 
   const catVienId = typeof catViennoiserie === 'object' ? catViennoiserie.id : catViennoiserie;
   const catPatId = typeof catPatisserie === 'object' ? catPatisserie.id : catPatisserie;
@@ -134,7 +135,7 @@ exports.seed = async function(knex) {
     contact_person: 'Jean Dupont',
     email: 'contact@moulinsfrance.fr',
     phone: '+33 1 23 45 67 89'
-  }).returning('id');
+  });
 
   const supplierId = typeof supplier === 'object' ? supplier.id : supplier;
 
@@ -152,9 +153,9 @@ exports.seed = async function(knex) {
     current_stock: 100.0,
     minimum_stock: 20.0,
     cost_per_unit: 1.20,
-    expiration_date: dateIn60Days.toISOString().split('T')[0],
+    expiration_date: toMySQLDate(dateIn60Days),
     supplier_id: supplierId
-  }).returning('id');
+  });
 
   const [ingButter] = await knex('ingredients').insert({
     name: 'Beurre Doux 82%',
@@ -162,9 +163,9 @@ exports.seed = async function(knex) {
     current_stock: 50.0,
     minimum_stock: 10.0,
     cost_per_unit: 8.50,
-    expiration_date: dateIn5Days.toISOString().split('T')[0], // Near expiration!
+    expiration_date: toMySQLDate(dateIn5Days), // Near expiration!
     supplier_id: supplierId
-  }).returning('id');
+  });
 
   const [ingSugar] = await knex('ingredients').insert({
     name: 'Sucre Cristal',
@@ -172,9 +173,9 @@ exports.seed = async function(knex) {
     current_stock: 40.0,
     minimum_stock: 5.0,
     cost_per_unit: 1.50,
-    expiration_date: dateIn60Days.toISOString().split('T')[0],
+    expiration_date: toMySQLDate(dateIn60Days),
     supplier_id: supplierId
-  }).returning('id');
+  });
 
   const [ingChocolate] = await knex('ingredients').insert({
     name: 'Bâtons de Chocolat',
@@ -182,9 +183,9 @@ exports.seed = async function(knex) {
     current_stock: 25.0,
     minimum_stock: 5.0,
     cost_per_unit: 12.00,
-    expiration_date: dateIn60Days.toISOString().split('T')[0],
+    expiration_date: toMySQLDate(dateIn60Days),
     supplier_id: supplierId
-  }).returning('id');
+  });
 
   const flourId = typeof ingFlour === 'object' ? ingFlour.id : ingFlour;
   const butterId = typeof ingButter === 'object' ? ingButter.id : ingButter;
@@ -198,7 +199,7 @@ exports.seed = async function(knex) {
     price: 1.30,
     category_id: catVienId,
     stock_quantity: 30
-  }).returning('id');
+  });
 
   const [prodPainChoc] = await knex('products').insert({
     name: 'Pain au Chocolat',
@@ -206,7 +207,7 @@ exports.seed = async function(knex) {
     price: 1.40,
     category_id: catVienId,
     stock_quantity: 25
-  }).returning('id');
+  });
 
   const croissantId = typeof prodCroissant === 'object' ? prodCroissant.id : prodCroissant;
   const painChocId = typeof prodPainChoc === 'object' ? prodPainChoc.id : prodPainChoc;
@@ -226,7 +227,7 @@ exports.seed = async function(knex) {
   // 7. Seed Initial Stock Movements
   await knex('stock_movements').insert([
     { ingredient_id: flourId, movement_type: 'IN', quantity: 100.0, reason: 'Stock Initial', created_by: adminId },
-    { ingredient_id: butterId, movement_type: 'IN', quantity: 50.0, reason: 'Stock Initial', expiration_date: dateIn5Days.toISOString().split('T')[0], created_by: adminId },
+    { ingredient_id: butterId, movement_type: 'IN', quantity: 50.0, reason: 'Stock Initial', expiration_date: toMySQLDate(dateIn5Days), created_by: adminId },
     { ingredient_id: sugarId, movement_type: 'IN', quantity: 40.0, reason: 'Stock Initial', created_by: adminId },
     { ingredient_id: chocId, movement_type: 'IN', quantity: 25.0, reason: 'Stock Initial', created_by: adminId }
   ]);
@@ -284,7 +285,7 @@ exports.seed = async function(knex) {
     status: 'ORDERED',
     total_cost: 120.00,
     created_by: adminId
-  }).returning('id');
+  });
   const poSeedId = typeof poSeed === 'object' ? poSeed.id : poSeed;
 
   await knex('purchase_order_items').insert({
@@ -298,12 +299,12 @@ exports.seed = async function(knex) {
   const [coSeed] = await knex('customer_orders').insert({
     customer_name: 'Jean Dupont',
     customer_phone: '+33 6 12 34 56 78',
-    delivery_date: dateIn5Days.toISOString().split('T')[0],
+    delivery_date: toMySQLDate(dateIn5Days),
     status: 'PENDING',
     total_price: 27.00,
     special_instructions: 'Gâteau d\'anniversaire personnalisé',
     user_id: cashierId
-  }).returning('id');
+  });
   const coSeedId = typeof coSeed === 'object' ? coSeed.id : coSeed;
 
   if (await knex.schema.hasTable('customer_order_items')) {

@@ -22,7 +22,7 @@ router.post('/', requireAuth, requireRole(['ADMIN', 'PRODUCTION']), async (req, 
       return res.status(400).json({ error: 'Category name is required.' });
     }
 
-    const [id] = await db('categories').insert({ name, description }).returning('id');
+    const [id] = await db('categories').insert({ name, description });
     const catId = typeof id === 'object' ? id.id : id;
 
     const created = await db('categories').where({ id: catId }).first();

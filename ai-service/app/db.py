@@ -3,7 +3,7 @@ from sqlalchemy.engine import Engine
 
 from app.config import READ_ONLY_DB_URL
 
-engine: Engine = create_engine(READ_ONLY_DB_URL, pool_pre_ping=True, future=True, connect_args={} if "sqlite" not in READ_ONLY_DB_URL else {"check_same_thread": False})
+engine: Engine = create_engine(READ_ONLY_DB_URL, pool_pre_ping=True, future=True)
 
 
 def _run_query(query: str):

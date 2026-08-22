@@ -64,7 +64,7 @@ router.post('/', requireAuth, requireRole(['ADMIN', 'STOCK']), async (req, res, 
       lead_time: lead_time || null,
       quality: quality || null,
       rating: rating !== undefined ? rating : null
-    }).returning('id');
+    });
 
     const supplierId = typeof id === 'object' ? id.id : id;
     const created = await db('suppliers').where({ id: supplierId }).first();

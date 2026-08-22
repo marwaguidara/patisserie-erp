@@ -112,7 +112,7 @@ router.post('/', requireAuth, requireRole(['ADMIN', 'STOCK', 'PRODUCTION']), asy
       cost_per_unit: cost_per_unit !== undefined ? cost_per_unit : 0,
       expiration_date: expiration_date || null,
       supplier_id: supplier_id || null
-    }).returning('id');
+    });
 
     const ingId = typeof id === 'object' ? id.id : id;
     const created = await db('ingredients').where({ id: ingId }).first();

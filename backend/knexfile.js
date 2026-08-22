@@ -1,24 +1,15 @@
 const path = require('path');
 
-const sqliteConfig = {
-  client: 'sqlite3',
-  connection: {
-    filename: process.env.DB_PATH || path.join(__dirname, 'dev.sqlite3')
-  },
-  useNullAsDefault: true,
-  migrations: {
-    directory: path.join(__dirname, 'migrations')
-  },
-  seeds: {
-    directory: path.join(__dirname, 'seeds')
-  },
-  pool: {
-    afterCreate: (conn, cb) => {
-      conn.run('PRAGMA foreign_keys = ON', cb);
-    }
-  }
-};
-
+/**
+ * Configuration MySQL (mysql2) — moteur PAR DÉFAUT du développement.
+ *
+ * Connexion pilotée par les variables d'environnement :
+ *   DB_HOST     (défaut : 127.0.0.1)
+ *   DB_PORT     (défaut : 3306)
+ *   DB_USER     (défaut : root)
+ *   DB_PASSWORD (défaut : '')
+ *   DB_NAME     (défaut : patisserie_erp)
+ */
 const mysqlConfig = {
   client: 'mysql2',
   connection: {
@@ -41,17 +32,40 @@ const mysqlConfig = {
   }
 };
 
+/**
+ * Configuration SQLite — REPLI EXPLICITE uniquement (DB_CLIENT=sqlite3|sqlite).
+ * L'environnement de test Jest utilise l'entrée `test` ci-dessous
+ * (SQLite en mémoire), qui reste inchangée.
+ */
+const sqliteConfig = {
+  client: 'sqlite3',
+  connection: {
+    filename: process.env.DB_PATH || path.join(__dirname, 'dev.sqlite3')
+  },
+  useNullAsDefault: true,
+  migrations: {
+    directory: path.join(__dirname, 'migrations')
+  },
+  seeds: {
+    directory: path.join(__dirname, 'seeds')
+  },
+  pool: {
+    afterCreate: (conn, cb) => {
+      conn.run('PRAGMA foreign_keys = ON', cb);
+    }
+  }
+};
+
 module.exports = {
-  // Environnement par défaut (SQLite, ou MySQL si DB_CLIENT=mysql2)
-  development: process.env.DB_CLIENT === 'mysql2' || process.env.DB_CLIENT === 'mysql'
-    ? mysqlConfig
-    : sqliteConfig,
+  // Développement : MySQL (mysql2) PAR DÉFAUT.
+  // Repli SQLite possible uniquement via DB_CLIENT=sqlite3 (ou sqlite).
+  development: process.env.DB_CLIENT === 'sqlite3' || process.env.DB_CLIENT === 'sqlite'
+    ? sqliteConfig
+    : mysqlConfig,
 
-  // Configuration SQLite explicite pour rollback immédiat
-  sqlite: sqliteConfig,
-
-  // Configuration MySQL XAMPP parallèle
+  // Configurations explicites (CLI : knex --env mysql / knex --env sqlite)
   mysql: mysqlConfig,
+  sqlite: sqliteConfig,
 
   test: {
     client: 'sqlite3',
@@ -75,20 +89,26 @@ module.exports = {
     }
   },
 
+  // Production : MySQL (même moteur que le développement).
   production: {
-    client: 'pg',
+    client: 'mysql2',
     connection: process.env.DATABASE_URL || {
-      host: process.env.DB_HOST || 'postgres',
-      port: process.env.DB_PORT || 5432,
-      user: process.env.DB_USER || 'bakery_user',
-      password: process.env.DB_PASSWORD || 'bakery_password',
-      database: process.env.DB_NAME || 'patisserie_erp'
+      host: process.env.DB_HOST || '127.0.0.1',
+      port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
+      user: process.env.DB_USER || 'root',
+      password: process.env.DB_PASSWORD || '',
+      database: process.env.DB_NAME || 'patisserie_erp',
+      charset: 'utf8mb4'
     },
     migrations: {
       directory: path.join(__dirname, 'migrations')
     },
     seeds: {
       directory: path.join(__dirname, 'seeds')
+    },
+    pool: {
+      min: 2,
+      max: 10
     }
   }
 };

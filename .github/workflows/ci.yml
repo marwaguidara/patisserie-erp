@@ -10,6 +10,21 @@ jobs:
   test-and-verify:
     runs-on: ubuntu-latest
 
+    # MySQL 8 — seule base supportée au runtime (dev = prod = CI).
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root_password
+          MYSQL_DATABASE: patisserie_erp
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -26,13 +41,26 @@ jobs:
           cd backend
           npm ci
 
-      - name: Run Knex Migrations & Seed
+      - name: Run Knex Migrations & Seed (MySQL)
         run: |
           cd backend
           npx knex migrate:latest
           npx knex seed:run
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: ci_root_password
+          DB_NAME: patisserie_erp
 
       - name: Run E2E Integration Tests
         run: |
           cd backend
           npm test
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: ci_root_password
+          DB_NAME: patisserie_erp
+

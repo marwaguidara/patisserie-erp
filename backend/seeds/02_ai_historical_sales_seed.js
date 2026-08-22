@@ -14,6 +14,8 @@
  *  - Minimum 5,000 ventes dans `sales` et 10,000 articles dans `sale_items`.
  */
 
+const { toMySQLDate, toMySQLDatetime } = require('../src/utils/datetimeUtils');
+
 exports.seed = async function (knex) {
   // Ignorer l'exécution automatique pendant les tests unitaires Jest (NODE_ENV=test)
   if (process.env.NODE_ENV === 'test') {
@@ -39,7 +41,7 @@ exports.seed = async function (knex) {
       email: 'cashier_seed02@bakery.com',
       password_hash: '$2a$10$wJzV5v4Q2Y7nL3wK6.u1u.O0a5w6q7r8s9t0u1v2w3x4y5z6a7b8c',
       role: 'CASHIER'
-    }).returning('id');
+    });
     cashierId = typeof newUserId === 'object' ? newUserId.id : newUserId;
   }
 
@@ -64,7 +66,7 @@ exports.seed = async function (knex) {
       const [inserted] = await knex('categories').insert({
         name: catDef.name,
         description: catDef.description
-      }).returning('id');
+      });
       const catId = typeof inserted === 'object' ? inserted.id : inserted;
       categoryMap[catDef.name] = catId;
     }
@@ -122,7 +124,7 @@ exports.seed = async function (knex) {
         category_id: catId,
         stock_quantity: pDef.default_stock,
         is_active: true
-      }).returning('id');
+      });
 
       const prodId = typeof insertedId === 'object' ? insertedId.id : insertedId;
       product = {
@@ -166,14 +168,14 @@ exports.seed = async function (knex) {
 
   let randomSeed = 42;
 
-  console.log(`[INFO] Génération des ventes du ${startDate.toISOString().split('T')[0]} au ${endDate.toISOString().split('T')[0]}...`);
+  console.log(`[INFO] Génération des ventes du ${toMySQLDate(startDate)} au ${toMySQLDate(endDate)}...`);
 
   // Boucle jour par jour (180 jours)
   for (let dayIndex = 0; dayIndex < TOTAL_DAYS; dayIndex++) {
     const currentDate = new Date(startDate);
     currentDate.setDate(startDate.getDate() + dayIndex);
 
-    const dateStr = currentDate.toISOString().split('T')[0];
+    const dateStr = toMySQLDate(currentDate);
     const month = currentDate.getMonth() + 1; // 1..12
     const dayOfWeek = currentDate.getDay(); // 0 = Dimanche, 6 = Samedi
     const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
@@ -291,7 +293,17 @@ exports.seed = async function (knex) {
     const salesDbRows = salesChunk.map(({ _items, ...saleRow }) => saleRow);
 
     // Insertion du lot de ventes
-    const insertedIds = await knex('sales').insert(salesDbRows).returning('id');
+    await knex('sales').insert(salesDbRows);
+
+    // mysql2 ne renvoie que le PREMIER insertId sur une insertion multi-lignes
+    // (.returning() y est sans effet) : relecture des IDs par receipt_number,
+    // unique en base. Compatible SQLite et MySQL.
+    const receiptNumbers = salesDbRows.map((r) => r.receipt_number);
+    const insertedRows = await knex('sales')
+      .whereIn('receipt_number', receiptNumbers)
+      .select('id', 'receipt_number');
+    const idByReceipt = new Map(insertedRows.map((r) => [r.receipt_number, r.id]));
+    const insertedIds = salesDbRows.map((r) => idByReceipt.get(r.receipt_number));
 
     // Récupération des IDs générés et association des articles
     const itemsChunkToInsert = [];
@@ -332,7 +344,7 @@ exports.seed = async function (knex) {
       quantity: 15.5,
       reason: 'Gaspillage / Péremption ingrédient (Anomalie détectée)',
       created_by: cashierId,
-      created_at: new Date().toISOString()
+      created_at: toMySQLDatetime(new Date())
     });
   }
 

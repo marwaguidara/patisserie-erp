@@ -182,7 +182,7 @@ router.post('/schedules', requireAuth, requirePermission('create_schedule'), asy
       shift_start,
       shift_end,
       notes: notes || null
-    }).returning('id');
+    });
 
     const scheduleId = typeof id === 'object' ? id.id : id;
     const created = await db('schedules').where({ id: scheduleId }).first();
@@ -249,7 +249,7 @@ router.post('/leaves', requireAuth, requirePermission('create_leave'), async (re
       // Non-ADMIN users cannot self-approve: only ADMIN-set status is respected,
       // everyone else is forced to PENDING (H-1 security fix).
       status: req.user.role === 'ADMIN' ? (status || 'PENDING') : 'PENDING'
-    }).returning('id');
+    });
 
     const leaveId = typeof id === 'object' ? id.id : id;
     const created = await db('leaves').where({ id: leaveId }).first();
@@ -304,7 +304,7 @@ router.post('/leaves/me', requireAuth, async (req, res, next) => {
       reason: reason || null,
       // Always PENDING — the employee can never self-approve.
       status: 'PENDING'
-    }).returning('id');
+    });
 
     const leaveId = typeof id === 'object' ? id.id : id;
     const created = await db('leaves').where({ id: leaveId }).first();
@@ -421,7 +421,7 @@ router.post('/', requireAuth, requirePermission('crud_employee'), validate(creat
         insertData.address = address || null;
       }
 
-      const [id] = await db('employees').insert(insertData).returning('id');
+      const [id] = await db('employees').insert(insertData);
       const employeeId = typeof id === 'object' ? id.id : id;
       const created = await db('employees').where({ id: employeeId }).first();
       return res.status(201).json(created);
@@ -465,10 +465,10 @@ router.post('/', requireAuth, requirePermission('crud_employee'), validate(creat
         email,
         password_hash: passwordHash,
         role: role || 'EMPLOYEE'
-      }).returning('id');
+      });
       const uid = typeof newUserId === 'object' ? newUserId.id : newUserId;
 
-      const [empId] = await trx('employees').insert({ ...insertData, user_id: uid }).returning('id');
+      const [empId] = await trx('employees').insert({ ...insertData, user_id: uid });
       const eid = typeof empId === 'object' ? empId.id : empId;
       return await trx('employees').where({ id: eid }).first();
     });

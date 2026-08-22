@@ -27,7 +27,7 @@ class AuditLogService {
         created_at: new Date().toISOString()
       };
 
-      const [insertedId] = await db('audit_logs').insert(entry).returning('id');
+      const [insertedId] = await db('audit_logs').insert(entry);
       return typeof insertedId === 'object' ? insertedId.id : insertedId;
     } catch (error) {
       console.error('[AuditLogService] Erreur lors de l\'enregistrement de l\'audit :', error.message);

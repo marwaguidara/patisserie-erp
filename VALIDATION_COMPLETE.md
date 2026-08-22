@@ -140,7 +140,7 @@ a9d5bc9 Initial commit: Phase 4 Sprint 0 walking skeleton with AI service
 ## Data Flow Validation (Proven)
 
 ```
-Backend Database (SQLite)
+Backend Database (MySQL)
     ↓ (CREATE sale)
 [Sale ID 20: 5 units of Croissant]
     ↓
@@ -164,20 +164,19 @@ Forecast Response
 ## Configuration Verified
 
 ### Database
-- **Driver:** SQLite (not PostgreSQL)
-- **Location:** `backend/dev.sqlite3`
-- **Connection:** Read-only for AI service
+- **Driver:** MySQL (`backend/knexfile.js` — dev/prod ; pilote mysql2)
+- **Database:** `patisserie_erp` (configurable via `DB_NAME`)
+- **AI service:** lecture seule de la même base MySQL via SQLAlchemy/PyMySQL
 
 ### AI Service
 - **Port:** 8000
-- **Configuration:** `DB_DRIVER=sqlite`
-- **Cache:** SQLite at `ai-service/data/v1/ai_results_cache.sqlite3`
+- **Configuration:** variables `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD`
+- **Cache:** SQLite at `ai-service/data/v1/ai_results_cache.sqlite3` (cache local, hors périmètre BD)
 - **Model Version:** baseline-v1
 
 ### Startup Command
 ```bash
 cd ai-service
-$env:DB_DRIVER="sqlite"
 $env:PYTHONPATH="c:\marwaguidara\summer\ai-service"
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
@@ -198,7 +197,9 @@ $env:PYTHONPATH="c:\marwaguidara\summer\ai-service"
 - Advanced ML features (future sprints)
 
 ### Known Limitations:
-- Local dev only uses SQLite (production: PostgreSQL)
+- Runtime (dev, docker, CI) uses MySQL exclusively; Jest tests use the in-memory
+  SQLite database by design (zero configuration), and the AI service keeps a local
+  SQLite cache file (out of database scope)
 - Forecast model is naive baseline (replaced in Sprint 1+)
 - Cache TTL: 300s (development value, tune for production)
 

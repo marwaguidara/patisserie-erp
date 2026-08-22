@@ -22,8 +22,9 @@ L'API centrale expose la documentation interactive de ses 58 endpoints sur `/doc
 (OpenAPI 3.1) et joue le rôle de passerelle sécurisée vers l'AI Service : chaque appel
 `/ai/*` traverse le même contrôle d'accès que le reste de la plateforme.
 
-La persistance est assurée par **Knex**, ce qui permet de développer sur **SQLite**
-puis de basculer vers **MySQL** ou **PostgreSQL** sans réécrire une seule requête.
+La persistance est assurée par **Knex** sur **MySQL**, la seule base supportée au
+runtime (développement, production et CI). Les tests Jest utilisent une base
+SQLite en mémoire, sans aucun serveur requis.
 
 ---
 
@@ -110,7 +111,7 @@ Express API        ← /docs (OpenAPI 3.1 + Swagger UI)
    ↓                      ↘ proxy sécurisé /ai/*
 Knex                          ↘
    ↓                        FastAPI (scikit-learn)
-SQLite / MySQL                    ↘
+MySQL                                  ↘
                                 Modèles ML / Cache
 ```
 
@@ -129,9 +130,8 @@ l'AI Service directement et ne connaît ni son hôte ni son port.
 |---|---|
 | Node.js 18 / Express 5 | Framework HTTP |
 | Knex 3 | Migrations, seeds, requêtes SQL |
-| SQLite 3 | Base de développement et base de test (en mémoire) |
-| MySQL 2 | Pilote prêt pour la bascule MySQL / XAMPP |
-| pg | Pilote PostgreSQL pour l'environnement de production |
+| MySQL 8 | Base de données unique — développement, production et CI (pilote mysql2) |
+| SQLite 3 | Base de test en mémoire pour l'environnement Jest uniquement |
 | jsonwebtoken / bcryptjs | Authentification JWT et hachage des mots de passe |
 | Zod 4 | Validation des payloads (schémas déclaratifs) |
 | Helmet 8 | En-têtes de sécurité HTTP |
@@ -148,7 +148,7 @@ l'AI Service directement et ne connaît ni son hôte ni son port.
 | Uvicorn | Serveur ASGI |
 | scikit-learn / joblib | Entraînement et chargement des modèles |
 | pandas / pyarrow | Préparation des données |
-| SQLAlchemy / psycopg | Accès base de données |
+| SQLAlchemy / PyMySQL | Accès base de données (MySQL, lecture seule) |
 | pytest | Tests du service |
 
 ---
@@ -171,7 +171,7 @@ summer/
 │   ├── migrations/             # Migrations Knex
 │   ├── seeds/                  # Données de démonstration
 │   ├── tests/                  # 27 suites Jest + scénarios Playwright
-│   └── knexfile.js             # Config SQLite / MySQL / PostgreSQL
+│   └── knexfile.js             # Config MySQL (dev + prod) / SQLite mémoire (tests)
 ├── ai-service/
 │   ├── app/                    # main.py, forecasting, anomalies, segmentation…
 │   ├── models/                 # Modèles entraînés
@@ -229,13 +229,11 @@ Le frontend est servi directement par l'API Express (fichiers statiques) : aucun
 fourni pour un déploiement conteneurisé.
 
 ### Base de données
-Par défaut, Knex utilise **SQLite** (`backend/dev.sqlite3`) — aucun serveur requis.
-
-Bascule vers **MySQL** (XAMPP ou serveur local), via variables d'environnement :
+**MySQL 8** est la base de données unique du projet — utilisée en développement,
+en production et en CI. Elle se configure via variables d'environnement :
 
 ```powershell
 # Windows PowerShell
-$env:DB_CLIENT='mysql2'
 $env:DB_HOST='127.0.0.1'
 $env:DB_PORT='3306'
 $env:DB_USER='root'
@@ -245,13 +243,14 @@ $env:DB_NAME='patisserie_erp'
 
 ```bash
 # Linux / macOS
-export DB_CLIENT=mysql2 DB_HOST=127.0.0.1 DB_PORT=3306
+export DB_HOST=127.0.0.1 DB_PORT=3306
 export DB_USER=root DB_PASSWORD=secret DB_NAME=patisserie_erp
 ```
 
-Puis relancer `npm run migrate` et `npm run seed` : les mêmes migrations s'appliquent.
-La configuration PostgreSQL est déjà prévue pour la production via `DATABASE_URL`.
-Les tests utilisent une base SQLite en mémoire, sans aucune configuration.
+Puis relancer `npm run migrate` et `npm run seed` : les mêmes migrations et seeds
+s'appliquent sur MySQL. **Les tests Jest utilisent une base SQLite en mémoire**,
+sans aucune configuration et sans serveur requis. Un repli SQLite explicite reste
+disponible via `DB_CLIENT=sqlite3` (dépannage uniquement).
 
 ### IA
 ```bash
@@ -363,7 +362,7 @@ rôles par endpoint, exemples de payloads et codes de réponse normalisés.
 - **Traçabilité de bout en bout** grâce aux audit logs couvrant toutes les actions sensibles.
 - **Architecture découplée** : l'IA est un service indépendant, accessible uniquement
   via un proxy authentifié — le client ne voit jamais le service Python.
-- **Portabilité de la donnée** : un seul jeu de migrations Knex pour SQLite, MySQL et PostgreSQL.
+- **Base de données unifiée** : un seul moteur (MySQL) pour le développement, la production et la CI.
 - **Recettes produit** : la production décrémente automatiquement les ingrédients,
   ce qui fiabilise le calcul de la marge réelle.
 - **Performance maîtrisée** : caches ciblés (résultats IA, dashboard), invalidés
